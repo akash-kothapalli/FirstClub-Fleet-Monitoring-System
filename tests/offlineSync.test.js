@@ -1,15 +1,18 @@
 import assert from 'node:assert';
 import http from 'node:http';
-import { initDatabase } from '../server/db.js';
+import db, { initDatabase } from '../server/db.js';
 import { loginUser } from '../server/middleware/auth.js';
 
 initDatabase();
 
+// Ensure temporary vehicle exists for offline sync testing
+db.prepare("INSERT OR REPLACE INTO vehicles (id, plate_number, vendor_id) VALUES ('veh_1', 'TEST-01-AB-1234', 'v1')").run();
+
 console.log('[TEST] Offline Telemetry Batch Ingestion & Auto-Sync');
 
 async function testBatchSync() {
-  const loginRes = loginUser('sunil@apexmedia.in', 'password123');
-  assert.ok(loginRes.token, 'Driver login token should be generated');
+  const loginRes = loginUser('akash.kothapalli@firstclub.co.in', 'password123');
+  assert.ok(loginRes.token, 'Ops Manager login token should be generated');
 
   const pings = [
     { campaign_id: 'c3', lat: 12.9210, lng: 77.6750, speed: 25, heading: 45, address: 'Offline Ping 1', is_break: 0, timestamp: new Date(Date.now() - 60000).toISOString() },

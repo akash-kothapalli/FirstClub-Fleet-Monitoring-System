@@ -1,12 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../services/api';
+import { useFleet } from '../context/FleetContext';
 
 export function ReportModal({ isOpen, onClose }) {
-  const [vehicleId, setVehicleId] = useState('veh_1');
+  const { vehicles } = useFleet();
+  const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || 'veh_1');
   const [blobUrl, setBlobUrl] = useState('');
 
   useEffect(() => {
-    if (isOpen) loadReport();
+    if (vehicles.length > 0 && (!vehicleId || !vehicles.find(v => v.id === vehicleId))) {
+      setVehicleId(vehicles[0].id);
+    }
+  }, [vehicles]);
+
+  useEffect(() => {
+    if (isOpen && vehicleId) loadReport();
 
     return () => {
       if (blobUrl) URL.revokeObjectURL(blobUrl);
@@ -22,7 +30,9 @@ export function ReportModal({ isOpen, onClose }) {
         const newUrl = URL.createObjectURL(blob);
         setBlobUrl(newUrl);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('Failed to load audit report:', e);
+    }
   }
 
   if (!isOpen) return null;
@@ -43,9 +53,11 @@ export function ReportModal({ isOpen, onClose }) {
 
         <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
           <select className="select-filter" value={vehicleId} onChange={e => setVehicleId(e.target.value)}>
-            <option value="veh_1">MH-02-CL-8821 (Mumbai)</option>
-            <option value="veh_2">MH-04-EV-9904 (Mumbai)</option>
-            <option value="veh_3">DL-01-AB-1234 (Delhi)</option>
+            {vehicles.map(v => (
+              <option key={v.id} value={v.id}>
+                {v.plate_number} ({v.current_city || 'Bengaluru'}) - Driver: {v.driver_name || 'Unassigned'}
+              </option>
+            ))}
           </select>
         </div>
 

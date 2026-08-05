@@ -11,7 +11,8 @@ export function generateToken(payload, expiresInHours = 12) {
   const header = { alg: 'HS256', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);
   const exp = now + (expiresInHours * 3600);
-  const fullPayload = { ...payload, iat: now, exp };
+  // Add microsecond entropy to prevent token collisions in automated test suites
+  const fullPayload = { ...payload, iat: now, exp, nonce: crypto.randomBytes(4).toString('hex') };
 
   const b64Header = Buffer.from(JSON.stringify(header)).toString('base64url');
   const b64Payload = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
@@ -71,7 +72,7 @@ export function loginUser(email, password) {
   const token = generateToken(tokenPayload, 12);
   const expiresAt = new Date(Date.now() + 12 * 3600 * 1000).toISOString();
 
-  db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, expiresAt);
+  db.prepare('INSERT OR REPLACE INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, expiresAt);
 
   return {
     token,

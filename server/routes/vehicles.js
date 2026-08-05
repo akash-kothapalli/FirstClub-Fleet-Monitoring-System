@@ -56,7 +56,7 @@ router.post('/', authMiddleware, requireRole('ops_manager', 'vendor_manager'), (
     db.prepare(`
       INSERT INTO vehicles (id, plate_number, vendor_id, assigned_driver_id, display_size, current_city, status)
       VALUES (?, ?, ?, ?, ?, ?, 'Offline')
-    `).run(id, plate_number, vendor_id, assigned_driver_id || null, display_size || '12x6 ft Dual LED', current_city || 'Mumbai');
+    `).run(id, plate_number, vendor_id, assigned_driver_id || null, display_size || '12x6 ft Dual LED', current_city || 'Bengaluru');
 
     const newVehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
     return res.json({ success: true, vehicle: newVehicle });
@@ -111,7 +111,7 @@ router.put('/:id', authMiddleware, requireRole('ops_manager', 'vendor_manager'),
           current_city = COALESCE(?, current_city),
           status = COALESCE(?, status)
       WHERE id = ?
-    `).run(plate_number, assigned_driver_id, display_size, current_city, status, vehicleId);
+    `).run(plate_number, assigned_driver_id || null, display_size, current_city, status, vehicleId);
 
     const updated = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicleId);
     return res.json({ success: true, vehicle: updated });
@@ -120,7 +120,7 @@ router.put('/:id', authMiddleware, requireRole('ops_manager', 'vendor_manager'),
   }
 });
 
-// DELETE /api/vehicles/:id (Delete Vehicle)
+// DELETE /api/vehicles/:id (Delete Vehicle with Safe Foreign Key Child Cleanup)
 router.delete('/:id', authMiddleware, requireRole('ops_manager', 'vendor_manager'), (req, res) => {
   const vehicleId = req.params.id;
   const existing = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicleId);
@@ -133,8 +133,19 @@ router.delete('/:id', authMiddleware, requireRole('ops_manager', 'vendor_manager
     return res.status(403).json({ error: 'Unauthorized: You can only delete vehicles belonging to your own company' });
   }
 
-  db.prepare('DELETE FROM vehicles WHERE id = ?').run(vehicleId);
-  return res.json({ success: true, message: `Vehicle ${vehicleId} deleted successfully` });
+  try {
+    // Explicitly delete child records from all referencing tables to prevent foreign key errors
+    db.prepare('DELETE FROM approved_breaks WHERE vehicle_id = ?').run(vehicleId);
+    db.prepare('DELETE FROM alerts WHERE vehicle_id = ?').run(vehicleId);
+    db.prepare('DELETE FROM vehicle_campaigns WHERE vehicle_id = ?').run(vehicleId);
+    db.prepare('DELETE FROM telemetry_pings WHERE vehicle_id = ?').run(vehicleId);
+    db.prepare('DELETE FROM campaign_photo_proofs WHERE vehicle_id = ?').run(vehicleId);
+    db.prepare('DELETE FROM vehicles WHERE id = ?').run(vehicleId);
+
+    return res.json({ success: true, message: `Vehicle ${vehicleId} deleted successfully` });
+  } catch (err) {
+    return res.status(500).json({ error: `Failed to delete vehicle: ${err.message}` });
+  }
 });
 
 export default router;

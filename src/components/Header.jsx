@@ -27,12 +27,14 @@ export function Header({ currentView, setView, openAdmin, openReport }) {
           </button>
         )}
 
-        <button
-          className={`nav-btn ${currentView === 'driver' ? 'active' : ''}`}
-          onClick={() => setView('driver')}
-        >
-          📱 Driver App
-        </button>
+        {isDriver && (
+          <button
+            className={`nav-btn ${currentView === 'driver' ? 'active' : ''}`}
+            onClick={() => setView('driver')}
+          >
+            📱 Driver App
+          </button>
+        )}
 
         {!isDriver && isOpsManager && (
           <button className="nav-btn" onClick={openAdmin}>

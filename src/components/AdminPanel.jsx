@@ -14,7 +14,7 @@ export function AdminPanel({ isOpen, onClose }) {
   const [id, setId] = useState(`veh_${Date.now()}`);
   const [plate, setPlate] = useState('');
   const [vendorId, setVendorId] = useState(user?.vendorId || 'v1');
-  const [city, setCity] = useState('Mumbai');
+  const [city, setCity] = useState('Bengaluru');
   const [displaySize, setDisplaySize] = useState('14x7 ft HD Dual LED');
   const [assignedDriverId, setAssignedDriverId] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -28,13 +28,12 @@ export function AdminPanel({ isOpen, onClose }) {
   async function loadDrivers() {
     try {
       const data = await apiFetch('/api/auth/drivers');
-      if (data.drivers && data.drivers.length > 0) {
+      if (data.drivers) {
         setDriversList(data.drivers);
-        if (!assignedDriverId) {
-          handleDriverSelect(data.drivers[0].id, data.drivers);
-        }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('Failed to load drivers list:', e);
+    }
   }
 
   function handleDriverSelect(selectedId, driversArray = driversList) {
@@ -52,6 +51,7 @@ export function AdminPanel({ isOpen, onClose }) {
     setEditingVehicleId(null);
     setId(`veh_${Date.now()}`);
     setPlate('');
+    setAssignedDriverId('');
     setErrorMsg('');
   }
 
@@ -60,7 +60,7 @@ export function AdminPanel({ isOpen, onClose }) {
     setId(v.id);
     setPlate(v.plate_number);
     setVendorId(v.vendor_id);
-    setCity(v.current_city);
+    setCity(v.current_city || 'Bengaluru');
     setDisplaySize(v.display_size || '14x7 ft HD Dual LED');
     setAssignedDriverId(v.assigned_driver_id || '');
   }
@@ -91,7 +91,7 @@ export function AdminPanel({ isOpen, onClose }) {
           method: 'PUT',
           body: JSON.stringify({
             plate_number: plate.trim(),
-            assigned_driver_id: assignedDriverId,
+            assigned_driver_id: assignedDriverId || null,
             display_size: displaySize,
             current_city: city
           })
@@ -103,7 +103,7 @@ export function AdminPanel({ isOpen, onClose }) {
             id,
             plate_number: plate.trim(),
             vendor_id: user?.role === 'vendor_manager' ? user.vendorId : vendorId,
-            assigned_driver_id: assignedDriverId,
+            assigned_driver_id: assignedDriverId || null,
             display_size: displaySize,
             current_city: city
           })
@@ -140,9 +140,9 @@ export function AdminPanel({ isOpen, onClose }) {
               <span>🔍 Vehicle Details: {viewVehicle.plate_number}</span>
               <button className="map-btn" style={{ padding: '2px 6px' }} onClick={() => setViewVehicle(null)}>✕ Close</button>
             </div>
-            <div>Driver Name: <strong>{viewVehicle.driver_name || 'Sunil Kumar'}</strong></div>
-            <div>Primary Mobile: <strong>{viewVehicle.driver_phone || '+91 98765 43210'}</strong></div>
-            <div>Vendor Partner: <strong>{viewVehicle.vendor_name || 'Apex Media'}</strong></div>
+            <div>Driver Name: <strong>{viewVehicle.driver_name || 'Unassigned'}</strong></div>
+            <div>Primary Mobile: <strong>{viewVehicle.driver_phone || 'N/A'}</strong></div>
+            <div>Vendor Partner: <strong>{viewVehicle.vendor_name || 'Akash Outdoor Media'}</strong></div>
             <div>Target City: <strong>{viewVehicle.current_city}</strong></div>
             <div>Status: <strong style={{ color: '#4ade80' }}>{viewVehicle.status}</strong> | Speed: <strong>{viewVehicle.current_speed} km/h</strong></div>
           </div>
@@ -164,6 +164,7 @@ export function AdminPanel({ isOpen, onClose }) {
             <div>
               <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Assigned Registered Driver</label>
               <select className="select-filter" value={assignedDriverId} onChange={e => handleDriverSelect(e.target.value)}>
+                <option value="">-- Select Driver (Optional) --</option>
                 {driversList.map(d => (
                   <option key={d.id} value={d.id}>
                     {d.full_name} ({d.email})
@@ -174,8 +175,7 @@ export function AdminPanel({ isOpen, onClose }) {
             <div>
               <label style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Vendor Partner</label>
               <select className="select-filter" value={vendorId} onChange={e => setVendorId(e.target.value)} disabled={user?.role === 'vendor_manager'}>
-                <option value="v1">Apex Outdoor Media (v1)</option>
-                <option value="v2">CityVibe Motion Ads (v2)</option>
+                <option value="v1">Akash Outdoor Media (v1)</option>
               </select>
             </div>
             <div>
@@ -198,7 +198,7 @@ export function AdminPanel({ isOpen, onClose }) {
           </div>
         </form>
 
-        {/* Active Fleet Table with Exact 6 Columns Requested */}
+        {/* Active Fleet Table */}
         <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
           <div style={{ fontSize: '13px', fontWeight: 700, color: 'white', marginBottom: '8px' }}>Active Fleet Roster</div>
           <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
@@ -216,10 +216,10 @@ export function AdminPanel({ isOpen, onClose }) {
               <tbody>
                 {vehicles.map(v => (
                   <tr key={v.id} style={{ borderBottom: '1px solid #1e293b' }}>
-                    <td style={{ padding: '8px', fontWeight: 'bold' }}>{v.driver_name || 'Sunil Kumar'}</td>
-                    <td style={{ padding: '8px', color: '#94a3b8' }}>{v.driver_phone || '+91 98765 43210'}</td>
+                    <td style={{ padding: '8px', fontWeight: 'bold' }}>{v.driver_name || 'Unassigned'}</td>
+                    <td style={{ padding: '8px', color: '#94a3b8' }}>{v.driver_phone || 'N/A'}</td>
                     <td style={{ padding: '8px', fontWeight: 'bold', color: '#ffffff' }}>{v.plate_number}</td>
-                    <td style={{ padding: '8px' }}>{v.vendor_name || 'Apex Media'}</td>
+                    <td style={{ padding: '8px' }}>{v.vendor_name || 'Akash Outdoor Media'}</td>
                     <td style={{ padding: '8px' }}>{v.current_city}</td>
                     <td style={{ padding: '8px', textAlign: 'center', display: 'flex', justifyContent: 'center', gap: '4px' }}>
                       <button className="map-btn" style={{ padding: '2px 6px', fontSize: '10px' }} onClick={() => setViewVehicle(v)}>👁️ View</button>

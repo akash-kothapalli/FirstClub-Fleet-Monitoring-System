@@ -45,7 +45,7 @@ router.post('/register', (req, res) => {
 
   const userId = `u_drv_${Date.now()}`;
   const passHash = hashPassword(password);
-  const vendorId = 'v1'; // Default to Apex Outdoor Media partner
+  const vendorId = 'v1'; // Default to Akash Outdoor Media partner
 
   try {
     db.prepare(`
@@ -58,7 +58,8 @@ router.post('/register', (req, res) => {
       email,
       role: 'driver',
       vendorId,
-      fullName
+      fullName,
+      full_name: fullName
     };
 
     const token = generateToken(tokenPayload, 12);
@@ -92,6 +93,9 @@ router.post('/driver-profile', authMiddleware, (req, res) => {
     `).run(phone, secondary_phone, target_city, target_campaign_areas, userId);
 
     const updatedUser = db.prepare('SELECT id, email, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas FROM users WHERE id = ?').get(userId);
+    if (updatedUser) {
+      updatedUser.fullName = updatedUser.full_name;
+    }
     return res.json({ success: true, user: updatedUser });
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -118,6 +122,9 @@ router.post('/logout', authMiddleware, (req, res) => {
 // 6. Current User Session Check
 router.get('/me', authMiddleware, (req, res) => {
   const fullUser = db.prepare('SELECT id, email, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas FROM users WHERE id = ?').get(req.user.userId);
+  if (fullUser) {
+    fullUser.fullName = fullUser.full_name;
+  }
   return res.json({ user: fullUser || req.user });
 });
 

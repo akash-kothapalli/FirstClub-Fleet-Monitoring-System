@@ -60,7 +60,7 @@ export function Dashboard() {
                   </span>
                 </div>
                 <div className="vehicle-meta">
-                  <div>Driver: <strong>{v.driver_name || 'Sunil Kumar'}</strong></div>
+                  <div>Driver: <strong>{v.driver_name || 'Unassigned'}</strong></div>
                   <div>Area: <strong style={{ color: 'white' }}>{v.current_area || 'Corridor Route'}</strong></div>
                   <div>Speed: <strong>{v.current_speed} km/h</strong> | City: <strong>{v.current_city}</strong></div>
                   <div>Logged Distance: <strong style={{ color: 'var(--accent-cyan)' }}>{(v.today_distance_km || 0).toFixed(1)} km</strong></div>

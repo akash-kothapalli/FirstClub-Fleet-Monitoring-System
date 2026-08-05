@@ -8,7 +8,7 @@ const verified = verifyToken(token);
 console.assert(verified !== null && verified.userId === 'u1', 'JWT verification failed');
 
 // Step 2: Login validation
-const loginRes = loginUser('manager@firstclub.com', 'password123');
+const loginRes = loginUser('akash.kothapalli@firstclub.co.in', 'password123');
 console.assert(loginRes.token && loginRes.user.role === 'ops_manager', 'Login failed');
 
 // Step 3: Token revocation

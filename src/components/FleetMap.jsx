@@ -33,7 +33,7 @@ export function FleetMap({ mapMode, setMapMode }) {
     }
   }, []);
 
-  // Auto-center and Auto-zoom to selected vehicle location (Robust for all vehicles 1, 2, 3, 4)
+  // Auto-center and Auto-zoom to selected vehicle location
   useEffect(() => {
     if (!mapInstance.current || !selectedVehicleId) return;
     const selected = vehicles.find(v => String(v.id) === String(selectedVehicleId));
@@ -52,7 +52,7 @@ export function FleetMap({ mapMode, setMapMode }) {
     heatmapCirclesRef.current.forEach(c => c.remove());
     heatmapCirclesRef.current = [];
 
-    // Render Heatmap Density Circles DYNAMICALLY from real vehicle locations (Fixes Vehicle 1 mismatch)
+    // Render Heatmap Density Circles
     if (mapMode === 'heatmap') {
       vehicles.forEach(v => {
         if (!v.current_lat || !v.current_lng) return;
@@ -104,8 +104,8 @@ export function FleetMap({ mapMode, setMapMode }) {
         marker.bindPopup(`
           <div style="color: #0f172a; font-family: sans-serif; font-size: 12px; line-height: 1.4;">
             <strong style="font-size: 14px;">${v.plate_number}</strong><br>
-            Driver: <strong>${v.driver_name || 'Sunil Kumar'}</strong><br>
-            Phone: ${v.driver_phone || '+91 98765 43210'}<br>
+            Driver: <strong>${v.driver_name || 'Unassigned'}</strong><br>
+            Phone: ${v.driver_phone || 'N/A'}<br>
             Location: <strong style="color: #0284c7;">${areaLocality}, ${v.current_city}</strong><br>
             Speed: <strong style="color: #0284c7;">${v.current_speed} km/h</strong><br>
             Status: <span style="font-weight: 700; color: ${color};">${v.status}${v.active_break_type ? ` (${v.active_break_type})` : ''}</span>

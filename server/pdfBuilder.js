@@ -38,11 +38,40 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     ORDER BY timestamp ASC
   `).all(vehicleId, dateStr);
 
-  const photoProofs = db.prepare(`
+  // Fetch photo proofs for this vehicle (with fallback to latest 6 if no date match)
+  let photoProofs = db.prepare(`
     SELECT * FROM campaign_photo_proofs
-    WHERE vehicle_id = ? AND date(timestamp) = date(?)
-    ORDER BY timestamp ASC
-  `).all(vehicleId, dateStr);
+    WHERE vehicle_id = ? AND (date(timestamp) = date(?) OR ? IS NULL OR ? = '')
+    ORDER BY timestamp DESC LIMIT 6
+  `).all(vehicleId, dateStr || null, dateStr || null, dateStr || null);
+
+  if (photoProofs.length === 0) {
+    photoProofs = db.prepare(`
+      SELECT * FROM campaign_photo_proofs
+      WHERE vehicle_id = ?
+      ORDER BY timestamp DESC LIMIT 6
+    `).all(vehicleId);
+  }
+
+  // Convert all photo URLs to embedded Base64 Data URIs to guarantee rendering inside iframe / PDF print
+  photoProofs = photoProofs.map(p => {
+    let base64Src = p.photo_url;
+    if (p.photo_url && p.photo_url.startsWith('data:image')) {
+      base64Src = p.photo_url;
+    } else if (p.photo_url && p.photo_url.startsWith('/uploads/')) {
+      try {
+        const relativePath = p.photo_url.replace('/uploads/', '');
+        const fullPath = path.join(process.cwd(), 'uploads', relativePath);
+        if (fs.existsSync(fullPath)) {
+          const fileBuf = fs.readFileSync(fullPath);
+          base64Src = `data:image/jpeg;base64,${fileBuf.toString('base64')}`;
+        }
+      } catch (e) {
+        console.error('Failed to convert photo proof to Base64:', e);
+      }
+    }
+    return { ...p, photo_base64: base64Src };
+  });
 
   // Hourly Corridor Sampling (1 ping per hour + start/end + stops)
   const sampledPings = [];
@@ -55,17 +84,17 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     }
   });
 
-  const totalDist = vehicle.today_distance_km || 42.8;
+  const totalDist = vehicle.today_distance_km || 0;
   const targetDist = campaign.target_km_per_day || 90;
-  const slaScore = Math.min(100, Math.round((totalDist / targetDist) * 100));
+  const slaScore = targetDist > 0 ? Math.min(100, Math.round((totalDist / targetDist) * 100)) : 100;
   const logoBase64 = getLogoBase64();
 
   const reportPayload = {
     reportId: `REP-${vehicleId}-${dateStr}`,
     vehicleId,
     plateNumber: vehicle.plate_number,
-    vendorName: vehicle.vendor_name,
-    driverName: vehicle.driver_name,
+    vendorName: vehicle.vendor_name || 'Akash Outdoor Media',
+    driverName: vehicle.driver_name || 'Unassigned Driver',
     campaignName: campaign.name,
     totalDistanceKm: totalDist,
     slaScore,
@@ -127,7 +156,7 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     
     .proof-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 24px; }
     .proof-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 8px; text-align: center; }
-    .proof-img { width: 100%; height: 120px; object-fit: cover; border-radius: 6px; }
+    .proof-img { width: 100%; height: 140px; object-fit: cover; border-radius: 6px; border: 1px solid #38bdf8; }
 
     .signature-box {
       margin-top: 32px; padding: 16px; background: rgba(15, 23, 42, 0.8);
@@ -154,8 +183,8 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     <div class="meta-item"><span class="meta-label">Campaign</span><span class="meta-val">${campaign.name}</span></div>
     <div class="meta-item"><span class="meta-label">Client</span><span class="meta-val">${campaign.client}</span></div>
     <div class="meta-item"><span class="meta-label">Vehicle Plate</span><span class="meta-val">${vehicle.plate_number}</span></div>
-    <div class="meta-item"><span class="meta-label">Vendor Partner</span><span class="meta-val">${vehicle.vendor_name || 'Apex Outdoor Media'}</span></div>
-    <div class="meta-item"><span class="meta-label">Assigned Driver</span><span class="meta-val">${vehicle.driver_name || 'Sunil Kumar'}</span></div>
+    <div class="meta-item"><span class="meta-label">Vendor Partner</span><span class="meta-val">${vehicle.vendor_name || 'Akash Outdoor Media'}</span></div>
+    <div class="meta-item"><span class="meta-label">Assigned Driver</span><span class="meta-val">${vehicle.driver_name || 'Unassigned Driver'}</span></div>
     <div class="meta-item"><span class="meta-label">Display Specs</span><span class="meta-val">${vehicle.display_size}</span></div>
     <div class="meta-item"><span class="meta-label">Target City</span><span class="meta-val">${vehicle.current_city}</span></div>
     <div class="meta-item"><span class="meta-label">Target Km/Day</span><span class="meta-val">${targetDist} km</span></div>
@@ -172,7 +201,7 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     </div>
     <div class="kpi-box">
       <div class="meta-label">Total Running Time</div>
-      <div class="kpi-num">${Math.floor((vehicle.running_time_mins || 185) / 60)}h ${(vehicle.running_time_mins || 185) % 60}m</div>
+      <div class="kpi-num">${Math.floor((vehicle.running_time_mins || 0) / 60)}h ${(vehicle.running_time_mins || 0) % 60}m</div>
     </div>
   </div>
 
@@ -185,9 +214,9 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     <div class="proof-grid">
       ${photoProofs.map(p => `
         <div class="proof-card">
-          <img src="${p.photo_url}" class="proof-img" alt="Proof">
+          <img src="${p.photo_base64}" class="proof-img" alt="Proof Photo">
           <div style="font-size: 10px; color: #4ade80; font-weight: 700; margin-top: 4px;">${new Date(p.timestamp).toLocaleTimeString()}</div>
-          <div style="font-size: 10px; color: #cbd5e1;">${p.address}</div>
+          <div style="font-size: 10px; color: #cbd5e1;">${p.address || 'Uploaded Location'}</div>
         </div>
       `).join('')}
     </div>

@@ -19,12 +19,12 @@ FirstClub FFMS tracks digital out-of-home (DOOH) LED campaign trucks operating a
 - **2D Geographic City Detection**: Genuine 2D bounding-box spatial coordinate matching for Bengaluru, Mumbai, Delhi, and Hyderabad with `'Unknown City'` fallback handling.
 - **Strict Role Isolation**:
   - **Super Admin / Ops Manager (`ops_manager`)**: Full nationwide fleet visibility, vehicle CRUD, SLA breach monitoring, and PDF report generation.
-  - **Vendor Manager (`vendor_manager`)**: Scoped exclusively to assigned vendor fleet (`v1` Apex Outdoor Media, `v2` CityVibe Motion Ads). Cannot access or tamper with other vendors' vehicles or alerts.
-  - **Driver (`driver`)**: Scoped strictly to assigned vehicle telemetry, Start/End Shift duty toggle, hardware GPS mode, approved break controls, driver profile registration, and 40-min photo proof uploads.
+  - **Vendor Manager (`vendor_manager`)**: Scoped exclusively to assigned vendor fleet (`v1` Akash Outdoor Media). Cannot access or tamper with other vendors' vehicles or alerts.
+  - **Driver (`driver`)**: Scoped strictly to assigned vehicle telemetry, Start/End Shift duty toggle, hardware GPS mode, approved break controls, driver profile registration, and multi-photo proof uploads.
 - **State Persistence**: SQLite database persistence across page reloads for driver shift duty status, active break selection (Lunch, Tea, Service), and hardware GPS toggle mode.
 - **Real-Time Server-Sent Events (SSE)**: Low-latency SSE streaming (`/api/events`) for instant broadcast of vehicle movements, status updates, and critical alerts.
-- **40-Min Photo Proof Upload Module**: Integrated camera capture & Base64 image payload upload with automated 40-minute countdown timer for proof of campaign execution.
-- **Automated PDF Report Generation**: On-demand PDF audit reports with campaign summary, route map visualization, hour-by-hour breakdown, and photo proof exhibits.
+- **40-Min Multi-Photo Proof Upload**: Multi-select camera & gallery image upload (up to 4 images per submission) with automated 40-minute countdown timer for proof of campaign execution.
+- **Automated PDF Report Generation**: Dynamic multi-vehicle PDF audit report generator with campaign summary, route map visualization, hour-by-hour breakdown, and photo proof exhibits.
 
 ---
 
@@ -40,8 +40,8 @@ FirstClub FFMS tracks digital out-of-home (DOOH) LED campaign trucks operating a
 | **Database** | Node SQLite (`node:sqlite`) | High-performance embedded SQLite database with WAL (Write-Ahead Logging) mode |
 | **Real-Time Streaming** | Server-Sent Events (SSE) | Unidirectional event streaming (`/api/events`) with automatic client reconnection |
 | **Authentication** | HMAC-SHA256 Signed JWT | Secure cookie & Bearer token authentication with session revocation |
-| **PDF Generation** | HTML Canvas & PDFKit Pattern | Multi-page executive daily audit report generation |
-| **Build & Deploy** | Vite, Docker, Docker Compose, PM2 | Fast production bundling and containerized deployment |
+| **PDF Generation** | HTML Canvas & PDFKit Pattern | Dynamic multi-vehicle executive daily audit report generation |
+| **Build & Deploy** | Vite, Docker, Docker Compose, PM2 | Multi-stage Docker deployment, fast production bundling |
 
 ---
 
@@ -49,7 +49,7 @@ FirstClub FFMS tracks digital out-of-home (DOOH) LED campaign trucks operating a
 
 ```
 led-fleet-monitoring/
-├── Dockerfile                  # Production Alpine Node container definition
+├── Dockerfile                  # Production Alpine Node multi-stage container definition
 ├── docker-compose.yml          # Container orchestration with data & upload volume persistence
 ├── index.html                  # Single Page Application HTML entry point
 ├── package.json                # Project dependencies, scripts, and engine specs
@@ -84,12 +84,12 @@ led-fleet-monitoring/
 │   ├── components/
 │   │   ├── AdminPanel.jsx      # Admin vehicle roster CRUD table & vendor assignment
 │   │   ├── AlertsCenter.jsx    # Real-time alert list & breach resolution
-│   │   ├── AuthPage.jsx        # Login screen & demo credentials selector
+│   │   ├── AuthPage.jsx        # Production login screen & driver registration form
 │   │   ├── Dashboard.jsx       # Operations Manager Command Center
 │   │   ├── DriverApp.jsx       # Mobile Driver interface & location/break controls
 │   │   ├── FleetMap.jsx        # Leaflet map instance, dynamic markers, heatmap layer
 │   │   ├── Header.jsx          # Header navigation bar, user profile, logout
-│   │   ├── ReportModal.jsx     # On-demand PDF audit report preview & download modal
+│   │   ├── ReportModal.jsx     # Dynamic multi-vehicle PDF audit report modal
 │   │   ├── RouteReplay.jsx     # Historical GPS breadcrumb route playback
 │   │   └── StatsOverview.jsx   # High-level fleet KPIs (Total Distance, Active Vans, SLA)
 │   ├── context/
@@ -150,15 +150,13 @@ Launch the Express server with SQLite WAL database initialization:
 npm run server
 ```
 
-### Step 5: Access Demo Accounts
-Open **`http://localhost:3000`** in your browser and log in using any of the pre-seeded credentials:
+### Step 5: Production User Credentials
 
-| Role | Email | Password | Access Scope |
-| :--- | :--- | :--- | :--- |
-| **Ops Manager** | `manager@firstclub.com` | `password123` | Full Nationwide Fleet Access |
-| **Vendor Manager (Apex)** | `vendor1@apexmedia.in` | `password123` | Scoped to Apex Outdoor Media (`v1`) |
-| **Vendor Manager (CityVibe)**| `vendor2@cityvibe.in` | `password123` | Scoped to CityVibe Motion Ads (`v2`) |
-| **Driver (Sunil Kumar)** | `sunil@apexmedia.in` | `password123` | Assigned to Vehicle `MH-02-CL-8821` |
+| Role | Name | Email | Password | Scope |
+| :--- | :--- | :--- | :--- | :--- |
+| **Ops Manager 1** | Akash | `akash.kothapalli@firstclub.co.in` | `password123` | Full Nationwide Operations |
+| **Ops Manager 2** | Bapu Kale | `bapu.kale@firstclub.co.in` | `password123` | Full Nationwide Operations |
+| **Vendor Manager** | Akash | `vendor.akash@firstclub.co.in` | `password123` | Scoped to Akash Outdoor Media (`v1`) |
 
 ---
 
@@ -204,10 +202,10 @@ FirstClub FFMS strictly enforces role-based authorization at both the API layer 
 - **APIs**: `GET /api/vehicles`, `GET /api/alerts`.
 
 ### 3. Driver Shift App & Offline Queue Module
-- **Purpose**: Field interface for drivers to manage shift duties, toggle smartphone hardware GPS, request breaks, and upload campaign photo proofs with IndexedDB offline buffering.
-- **Features**: Modern toggle switches, 40-minute proof countdown timer, break buffer controls (Lunch, Tea, Service), IndexedDB offline ping store (`queued_pings`), auto-flushing network event listener (`window.addEventListener('online')`), and dynamic reverse-geocoded location display.
+- **Purpose**: Field interface for drivers to manage shift duties, toggle smartphone hardware GPS, request breaks, and upload campaign photo proofs with Gallery multi-photo selection and IndexedDB offline buffering.
+- **Features**: Modern toggle switches, 40-minute proof countdown timer, break buffer controls (Lunch, Tea, Service), IndexedDB offline ping store (`queued_pings`), auto-flushing network event listener (`window.addEventListener('online')`), gallery multi-photo upload (up to 4 images), and dynamic reverse-geocoded location display.
 - **Roles**: `driver`.
-- **Input**: Device GPS coordinates (`navigator.geolocation`), IndexedDB buffer, file camera uploads, shift break toggles.
+- **Input**: Device GPS coordinates (`navigator.geolocation`), IndexedDB buffer, multi-image camera/gallery uploads, shift break toggles.
 - **Output**: Ingested telemetry pings, batch synced offline pings, photo proof records in SQLite, real-time SSE broadcasts.
 - **Database Tables**: `vehicles`, `telemetry_pings`, `approved_breaks`, `campaign_photo_proofs`.
 - **APIs**: `POST /api/vehicles/settings`, `POST /api/telemetry/ping`, `POST /api/telemetry/batch`, `POST /api/telemetry/breaks/toggle`, `POST /api/telemetry/photo-proof`.
@@ -250,7 +248,7 @@ FirstClub FFMS strictly enforces role-based authorization at both the API layer 
 
 ### 8. Executive PDF Report Generation
 - **Purpose**: Generates official, multi-page daily audit reports for client billing proof.
-- **Features**: Summary statistics, hour-by-hour operational breakdown, route map graphic exhibit, and photo proof timestamps.
+- **Features**: Dynamic multi-vehicle selection, summary statistics, hour-by-hour operational breakdown, route map graphic exhibit, and photo proof timestamps.
 - **Roles**: `ops_manager`, `vendor_manager`.
 - **Input**: `vehicle_id`, target `date`.
 - **Output**: Downloadable formatted PDF document.
@@ -259,41 +257,30 @@ FirstClub FFMS strictly enforces role-based authorization at both the API layer 
 
 ---
 
-## 🏛️ 8. Real-World Vehicle Tracking Assessment & Technical Evaluation
+## 💾 10. Production SQLite Database Operations & Access Guide
 
-### Executive Architecture Questions & Answers
+### Database Path & Storage
+- **Production Path**: `/app/data/fleet.db`
+- **WAL Log Files**: `/app/data/fleet.db-wal` & `/app/data/fleet.db-shm`
+- **Render Disk Mount**: `/app/data` and `/app/uploads`
 
-#### Q1: Can this application reliably track vehicles in real time?
-- **Answer**: **Yes, within active browser foreground sessions.** When the driver has the web browser open on an Android smartphone or tablet, `navigator.geolocation.watchPosition` streams live GPS coordinates to `/api/telemetry/ping` every 3 seconds. The Express backend updates SQLite and broadcasts the coordinates over Server-Sent Events (`/api/events`) to the Ops Command Center map in < 150ms.
+### Accessing Database in Production
+1. Go to [Render Dashboard](https://dashboard.render.com/) -> Select **FirstClub-Fleet-Monitoring-System** -> **Shell**.
+2. Run SQLite CLI:
+   ```bash
+   sqlite3 /app/data/fleet.db
+   ```
 
-#### Q2: Is the tracking accurate enough for production use?
-- **Answer**: **Yes, for high-level corridor auditing and daily distance calculation.** Hardware GPS on modern smartphones provides accuracy within ±5 to ±15 meters, which is fully sufficient for geofence breach detection, corridor verification, and daily kilometer tracking.
-
-#### Q3: Will it work on actual Android smartphones while drivers are on the road?
-- **Answer**: **Yes, when the smartphone browser remains active and visible.** HTML5 Screen WakeLock API (`navigator.wakeLock`) is implemented in `DriverApp.jsx` to prevent the phone screen from sleeping while on shift. However, if the driver switches to another app (e.g. WhatsApp, phone calls) or turns off the screen, mobile operating systems suspend web browser JavaScript execution to conserve battery.
-
-#### Q4: Can it handle intermittent internet connectivity and automatically sync data?
-- **Answer**: **Yes.** The Driver App utilizes an offline telemetry queue stored in browser `IndexedDB` (`fleet_offline_db`). If mobile cellular signal drops in low-reception dead zones, pings are buffered locally in IndexedDB and automatically flushed to `POST /api/telemetry/batch` once connectivity is restored (`window.addEventListener('online')`).
-
-#### Q5: Is the GPS tracking approach reliable for long-duration campaigns?
-- **Answer**: For short-to-medium deployments (e.g., 2–4 week brand activations), browser-based tracking with screen WakeLock and IndexedDB offline queueing is viable. For 6-to-12 month permanent fleet operations, dedicated hardware OBD-II / GPS telematics trackers wired to vehicle ignition are recommended to remove reliance on driver phone interaction.
-
-#### Q6: Is the current architecture scalable for multiple vendors and hundreds of vehicles?
-- **Answer**: **Yes.** Node.js with SQLite WAL (Write-Ahead Logging) mode comfortably handles up to 500 concurrent telemetry pings per second. Indexing on `(vehicle_id, timestamp)` ensures instant querying of historical pings.
-
----
-
-## ⚠️ 9. System Limitations & Future Engineering Roadmap
-
-| Domain | Current Limitation | Impact | Production Mitigation / Roadmap Strategy |
-| :--- | :--- | :--- | :--- |
-| **Background Tracking** | Mobile browsers (Chrome/Safari) throttle or freeze JS timers when app is minimized or screen is locked. | GPS pings stop if driver switches apps or turns off phone screen. | Deploy a dedicated Android/iOS Native Wrapper (React Native / Flutter) using Background Location Services & Foreground Service Notification. |
-| **Battery Optimization** | Continuous hardware GPS polling (`highAccuracy: true`) consumes ~15–20% battery per hour. | Phone battery drains rapidly during 8-hour driver shifts. | Require drivers to keep smartphones plugged into vehicle 12V USB charger; implement adaptive GPS polling based on motion sensors. |
-| **iOS Web Restrictions** | Apple iOS Safari strictly limits background geolocation and WakeLock API execution. | iPhone-based drivers experience interrupted tracking if screen dims. | Issue standardized Android devices (e.g., Samsung Galaxy A-series) to drivers for campaign shifts. |
-| **Urban GPS Drift** | Urban canyon effect (tall buildings in BKC Mumbai or Cyber Hub Delhi) can cause ~20–50m GPS drift. | False geofence breach alerts near tall buildings. | Implement Kalman Filtering on incoming lat/lng points and add a 50-meter buffer zone around campaign geofence boundaries. |
-| **Database Scalability** | Single-file SQLite WAL DB handles up to ~1,000 active vans. Scaling beyond 5,000 vans requires horizontal DB clustering. | High write lock contention at massive multi-thousand van scale. | Migrate core `telemetry_pings` table to PostgreSQL with TimescaleDB extension for hyper-scalable time-series telemetry. |
-| **Real-Time Transport** | SSE (`/api/events`) is unidirectional (server-to-client). | Client-to-server messaging requires separate HTTP POST calls. | Upgrade transport layer to bi-directional WebSockets (`Socket.io`) for instant full-duplex communication. |
-| **Authentication** | Password authentication with SHA-256 hash. | Does not enforce Multi-Factor Authentication (MFA). | Integrate OAuth2 / SAML Single Sign-On (SSO) and SMS OTP verification for driver login. |
+### Backup & Restore
+- **Live Atomic Backup**:
+  ```bash
+  sqlite3 /app/data/fleet.db ".backup '/app/data/fleet_backup.db'"
+  ```
+- **Database Restoration**:
+  ```bash
+  cp /app/data/fleet_backup.db /app/data/fleet.db
+  rm -f /app/data/fleet.db-wal /app/data/fleet.db-shm
+  ```
 
 ---
 

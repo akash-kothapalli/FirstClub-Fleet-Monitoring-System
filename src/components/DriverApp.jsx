@@ -18,10 +18,11 @@ export function DriverApp() {
   const [currentAddress, setCurrentAddress] = useState('Detecting Live Location...');
   const [gpsAccuracy, setGpsAccuracy] = useState(8);
 
-  // Driver Profile State
-  const [driverName, setDriverName] = useState(user?.fullName || 'Sunil Kumar');
-  const [primaryPhone, setPrimaryPhone] = useState(user?.phone || '+91 98765 43210');
-  const [secondaryPhone, setSecondaryPhone] = useState(user?.secondary_phone || '+91 98765 43211');
+  // Driver Profile State dynamically initialized from authenticated user
+  const currentDriverName = user?.full_name || user?.fullName || 'Driver';
+  const [driverName, setDriverName] = useState(currentDriverName);
+  const [primaryPhone, setPrimaryPhone] = useState(user?.phone || '');
+  const [secondaryPhone, setSecondaryPhone] = useState(user?.secondary_phone || '');
   const [targetCity, setTargetCity] = useState(user?.target_city || 'Bengaluru');
   const [campaignAreas, setCampaignAreas] = useState(user?.target_campaign_areas || 'Bellandur, Sarjapur, Indiranagar');
   const [profileSavedMsg, setProfileSavedMsg] = useState('');
@@ -54,9 +55,9 @@ export function DriverApp() {
 
   useEffect(() => {
     if (user) {
-      setDriverName(user.fullName || 'Sunil Kumar');
-      setPrimaryPhone(user.phone || '+91 98765 43210');
-      setSecondaryPhone(user.secondary_phone || '+91 98765 43211');
+      setDriverName(user.full_name || user.fullName || 'Driver');
+      setPrimaryPhone(user.phone || '');
+      setSecondaryPhone(user.secondary_phone || '');
       setTargetCity(user.target_city || 'Bengaluru');
       setCampaignAreas(user.target_campaign_areas || 'Bellandur, Sarjapur, Indiranagar');
     }
@@ -147,43 +148,60 @@ export function DriverApp() {
     fetchVehicles();
   }
 
+  // Enhanced Multi-Photo Proof Upload (Gallery + Camera support)
   async function handlePhotoUpload(e) {
     if (!myVehicle) return;
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('File size exceeds 5MB limit.');
+    if (files.length > 4) {
+      alert('You can upload up to 4 photos per proof submission.');
       return;
+    }
+
+    for (let f of files) {
+      if (f.size > 5 * 1024 * 1024) {
+        alert(`File ${f.name} exceeds 5MB limit.`);
+        return;
+      }
     }
 
     setUploading(true);
     setUploadSuccessMsg('');
 
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const res = await apiFetch('/api/telemetry/photo-proof', {
-          method: 'POST',
-          body: JSON.stringify({
-            vehicle_id: myVehicle.id,
-            photo_base64: reader.result,
-            lat: myVehicle.current_lat || 12.9220,
-            lng: myVehicle.current_lng || 77.6764
-          })
-        });
+    let uploadedCount = 0;
 
-        if (res.success) {
-          setUploadSuccessMsg('📸 Photo proof uploaded successfully!');
-          setSecondsRemaining(40 * 60);
-        }
-      } catch (err) {
-        alert(`Photo upload failed: ${err.message}`);
-      } finally {
-        setUploading(false);
-      }
-    };
-    reader.readAsDataURL(file);
+    for (let file of files) {
+      await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const res = await apiFetch('/api/telemetry/photo-proof', {
+              method: 'POST',
+              body: JSON.stringify({
+                vehicle_id: myVehicle.id,
+                photo_base64: reader.result,
+                lat: myVehicle.current_lat || 12.9220,
+                lng: myVehicle.current_lng || 77.6764
+              })
+            });
+
+            if (res.success) uploadedCount++;
+          } catch (err) {
+            console.error('Photo upload error:', err.message);
+          } finally {
+            resolve();
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    setUploading(false);
+    if (uploadedCount > 0) {
+      setUploadSuccessMsg(`📸 ${uploadedCount} campaign proof photo(s) uploaded successfully!`);
+      setSecondsRemaining(40 * 60);
+    }
   }
 
   // Display unassigned vehicle alert banner if driver has no vehicle
@@ -196,7 +214,7 @@ export function DriverApp() {
         }}>
           <h2 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>⚠️ Unassigned Driver Account</h2>
           <p style={{ fontSize: '13px', margin: 0 }}>
-            No vehicle is currently assigned to your driver account (<strong>{user?.email}</strong>).<br />
+            No vehicle is currently assigned to your driver account (<strong>{user?.full_name || user?.fullName || user?.email}</strong>).<br />
             Please contact your FirstClub Ops Manager to assign a vehicle to your profile in Admin CRUD.
           </p>
         </div>
@@ -310,12 +328,12 @@ export function DriverApp() {
         </div>
 
         <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-          Upload geo-stamped campaign execution photo every 40 minutes as billing proof.
+          Upload 1 to 4 geo-stamped campaign execution photos from Camera or Gallery as billing proof.
         </div>
 
         <label className="map-btn active" style={{ justifyContent: 'center', padding: '10px', width: '100%', cursor: 'pointer' }}>
-          {uploading ? '⏳ Uploading Photo...' : '📷 Capture / Upload Proof Photo'}
-          <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handlePhotoUpload} />
+          {uploading ? '⏳ Uploading Photo Proofs...' : '🖼️ Select / Capture Proof Photos (Multi-Photo Supported)'}
+          <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handlePhotoUpload} />
         </label>
 
         {uploadSuccessMsg && (

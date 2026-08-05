@@ -70,8 +70,8 @@ export function initDatabase() {
       assigned_driver_id TEXT,
       display_size TEXT DEFAULT '12x6 ft Dual LED',
       status TEXT DEFAULT 'Offline' CHECK(status IN ('Moving', 'Idle', 'On Approved Break', 'Offline')),
-      current_city TEXT DEFAULT 'Mumbai',
-      current_area TEXT DEFAULT 'Marine Drive Promenade',
+      current_city TEXT DEFAULT 'Bengaluru',
+      current_area TEXT DEFAULT 'Bellandur & Sarjapur Tech Corridor',
       current_lat REAL,
       current_lng REAL,
       current_speed REAL DEFAULT 0,
@@ -193,150 +193,59 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_alerts_vehicle_time ON alerts(vehicle_id, timestamp);
   `);
 
-  seedDataIfEmpty();
-  runGuardedMigrations();
-}
-
-function runGuardedMigrations() {
-  const MIGRATION_ID = 'v1_driver_id_alignment';
-  try {
-    const check = db.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(MIGRATION_ID);
-    if (check) {
-      console.log(`[DB MIGRATION] ${MIGRATION_ID} already executed. Skipping.`);
-      return;
-    }
-
-    const CITY_ZONES = [
-      { name: 'Bengaluru', latMin: 12.7, latMax: 13.2, lngMin: 77.3, lngMax: 77.9 },
-      { name: 'Delhi',     latMin: 28.3, latMax: 28.9, lngMin: 76.8, lngMax: 77.5 },
-      { name: 'Mumbai',    latMin: 18.8, latMax: 19.3, lngMin: 72.7, lngMax: 73.1 },
-      { name: 'Hyderabad', latMin: 17.2, latMax: 17.6, lngMin: 78.2, lngMax: 78.7 },
-    ];
-
-    // Systemically align assigned_driver_id for existing assigned drivers using user email match
-    db.exec(`
-      UPDATE vehicles
-      SET assigned_driver_id = (
-        SELECT id FROM users 
-        WHERE (users.email = 'sunil@apexmedia.in' AND vehicles.id = 'veh_1')
-           OR (users.email = 'driver.raju@apexmedia.in' AND vehicles.id = 'veh_2')
-           OR (users.email = 'driver.anil@cityvibe.in' AND vehicles.id = 'veh_3')
-        LIMIT 1
-      )
-      WHERE id IN ('veh_1', 'veh_2', 'veh_3');
-    `);
-
-    // Synchronize vehicle cities and area landmarks
-    const vehicles = db.prepare('SELECT id, current_lat, current_lng, current_city, current_area FROM vehicles').all();
-    vehicles.forEach(v => {
-      if (v.current_lat && v.current_lng) {
-        const match = CITY_ZONES.find(
-          z => v.current_lat >= z.latMin && v.current_lat <= z.latMax && v.current_lng >= z.lngMin && v.current_lng <= z.lngMax
-        );
-        const resolvedCity = match ? match.name : (v.current_city || 'Unknown City');
-
-        let resolvedArea = v.current_area;
-        if (!resolvedArea || resolvedArea.startsWith('GPS Corridor') || resolvedArea === 'Corridor Route') {
-          if (v.current_lat >= 12.90 && v.current_lat <= 12.95 && v.current_lng >= 77.64 && v.current_lng <= 77.71) {
-            resolvedArea = 'Bellandur & Sarjapur Tech Corridor';
-          }
-        }
-
-        db.prepare('UPDATE vehicles SET current_city = ?, current_area = ? WHERE id = ?').run(resolvedCity, resolvedArea, v.id);
-      }
-    });
-
-    db.prepare('INSERT INTO schema_migrations (id) VALUES (?)').run(MIGRATION_ID);
-    console.log(`[DB MIGRATION] Executed ${MIGRATION_ID} successfully.`);
-  } catch (err) {
-    console.warn('[DB MIGRATION] Execution error:', err.message);
-  }
+  cleanupDemoAccountsAndSeedProduction();
 }
 
 function hashPassword(password) {
   return crypto.createHash('sha256').update(password + 'firstclub_salt_2026').digest('hex');
 }
 
-function seedDataIfEmpty() {
-  const countStmt = db.prepare('SELECT COUNT(*) as count FROM users');
-  const result = countStmt.get();
-  if (result.count > 0) return;
-
-  console.log('[DB] Seeding initial vendors, users, campaigns, and vehicles...');
-
-  const insertVendor = db.prepare('INSERT INTO vendors (id, name, contact_email, phone) VALUES (?, ?, ?, ?)');
-  insertVendor.run('v1', 'Apex Outdoor Media', 'ops@apexmedia.in', '+91 98200 11223');
-  insertVendor.run('v2', 'CityVibe Motion Ads', 'contact@cityvibe.co.in', '+91 98111 44556');
-
-  const insertUser = db.prepare(`
-    INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+function cleanupDemoAccountsAndSeedProduction() {
   const defaultPass = hashPassword('password123');
-  
-  insertUser.run('u_ops1', 'manager@firstclub.com', defaultPass, 'ops_manager', null, 'Rajesh Sharma (FirstClub Ops)', '+91 98000 00001', '', 'Mumbai', 'Nationwide');
-  insertUser.run('u_vm1', 'vendor1@apexmedia.in', defaultPass, 'vendor_manager', 'v1', 'Vikram Patel (Apex Media)', '+91 98200 11223', '', 'Mumbai', 'Mumbai Corridors');
-  insertUser.run('u_vm2', 'vendor2@cityvibe.in', defaultPass, 'vendor_manager', 'v2', 'Amit Verma (CityVibe Ads)', '+91 98111 44556', '', 'Delhi', 'NCR Ring Road');
-  
-  insertUser.run('u_d1', 'sunil@apexmedia.in', defaultPass, 'driver', 'v1', 'Sunil Kumar', '+91 98765 43210', '+91 98765 43211', 'Bengaluru', 'Bellandur, Sarjapur, Indiranagar');
-  insertUser.run('u_d2', 'driver.raju@apexmedia.in', defaultPass, 'driver', 'v1', 'Raju Yadav', '+91 98765 88990', '', 'Mumbai', 'Western Express Highway');
-  insertUser.run('u_d3', 'driver.anil@cityvibe.in', defaultPass, 'driver', 'v2', 'Anil Deshmukh', '+91 98111 22334', '', 'Delhi', 'Connaught Place, Cyber Hub');
 
-  const insertCampaign = db.prepare('INSERT INTO campaigns (id, name, client, city, target_km_per_day, geofence_json, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  
-  const mumbaiGeofence = JSON.stringify([
-    [18.9200, 72.8150], [18.9600, 72.8400], [19.0600, 72.8500], [19.1200, 72.8300],
-    [19.1800, 72.8500], [19.1500, 72.8800], [19.0000, 72.8600], [18.9200, 72.8300]
-  ]);
-
-  const delhiGeofence = JSON.stringify([
-    [28.6000, 77.1800], [28.6500, 77.2000], [28.6600, 77.2400],
-    [28.5800, 77.2500], [28.5000, 77.1000], [28.5300, 77.0800]
-  ]);
-
-  const blrGeofence = JSON.stringify([
-    [12.9500, 77.6000], [12.9800, 77.6200], [12.9900, 77.6600],
-    [12.9200, 77.6800], [12.9000, 77.6300]
-  ]);
-
-  insertCampaign.run('c1', 'FirstClub Summer Flash Sale', 'FirstClub Retail', 'Mumbai', 90, mumbaiGeofence, '2026-08-01', '2026-08-31');
-  insertCampaign.run('c2', 'ElectroFest LED Blitz', 'TechGig Events', 'Delhi', 100, delhiGeofence, '2026-08-01', '2026-08-15');
-  insertCampaign.run('c3', 'App Launch Roadshow', 'SuperApp Inc', 'Bengaluru', 85, blrGeofence, '2026-08-01', '2026-08-20');
-
-  const insertVehicle = db.prepare(`
-    INSERT INTO vehicles 
-    (id, plate_number, vendor_id, assigned_driver_id, display_size, status, current_city, current_area, current_lat, current_lng, current_speed, heading, last_ping_time, today_distance_km, running_time_mins, idle_time_mins, break_time_mins, is_duty_active) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?, 1)
+  // Purge legacy test emails from early dev iterations
+  db.exec(`
+    DELETE FROM users WHERE email IN (
+      'manager@firstclub.com', 'vendor1@apexmedia.in', 'vendor2@cityvibe.in',
+      'driver.sunil@apexmedia.in', 'driver.raju@apexmedia.in', 'driver.anil@cityvibe.in',
+      'sunil@apexmedia.in', 'sunil@firstclub.co.in', 'mahesh@gmail.com'
+    );
   `);
 
-  insertVehicle.run('veh_1', 'MH-02-CL-8821', 'v1', 'u_d1', '14x7 ft HD Dual LED', 'Moving', 'Bengaluru', 'Bellandur & Sarjapur Tech Corridor', 12.9220, 77.6764, 28.5, 45.0, 42.8, 185, 22, 45);
-  insertVehicle.run('veh_2', 'MH-04-EV-9904', 'v1', 'u_d2', '12x6 ft 4K Curved LED', 'On Approved Break', 'Mumbai', 'Bandra Kurla Complex (BKC)', 19.0621, 72.8340, 0.0, 180.0, 31.4, 140, 15, 45);
-  insertVehicle.run('veh_3', 'DL-01-AB-1234', 'v2', 'u_d3', '16x8 ft Triple Screen Truck', 'Moving', 'Delhi', 'Connaught Place Outer Ring', 28.6289, 77.2197, 34.0, 90.0, 58.2, 210, 35, 30);
-  insertVehicle.run('veh_4', 'KA-89-8688', 'v1', 'u_d2', '14x7 ft HD Dual LED', 'Offline', 'Bengaluru', 'Indiranagar 100ft Road', 12.9716, 77.5946, 0.0, 0.0, 0.0, 0, 0, 0);
+  // Ensure production vendor Akash Outdoor Media exists
+  db.prepare(`
+    INSERT OR REPLACE INTO vendors (id, name, contact_email, phone) VALUES (?, ?, ?, ?)
+  `).run('v1', 'Akash Outdoor Media', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111');
 
-  const insertVC = db.prepare('INSERT INTO vehicle_campaigns (vehicle_id, campaign_id) VALUES (?, ?)');
-  insertVC.run('veh_1', 'c1');
-  insertVC.run('veh_2', 'c1');
-  insertVC.run('veh_3', 'c2');
+  // 1. Ops Manager: Akash
+  db.prepare(`
+    INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role, full_name = excluded.full_name
+  `).run('u_ops1', 'akash.kothapalli@firstclub.co.in', defaultPass, 'ops_manager', null, 'Akash', '+91 98000 11111', '', 'Bengaluru', 'Bellandur, Sarjapur, Indiranagar');
 
-  const insertPing = db.prepare(`
-    INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, visibility_state, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))
-  `);
+  // 2. Ops Manager: Bapu
+  db.prepare(`
+    INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role, full_name = excluded.full_name
+  `).run('u_ops2', 'bapu.kale@firstclub.co.in', defaultPass, 'ops_manager', null, 'Bapu', '+91 98000 22222', '', 'Mumbai', 'Marine Drive, BKC, Worli');
 
-  const blrWaypoints = [
-    [12.9120, 77.6546, 22, 10, "Sarjapur Road, Bengaluru", "-180 minutes"],
-    [12.9220, 77.6764, 28, 45, "Bellandur & Sarjapur Tech Corridor, Bengaluru", "-5 minutes"]
-  ];
+  // 3. Driver: Mangesh
+  db.prepare(`
+    INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role, full_name = excluded.full_name
+  `).run('u_d_mangesh', 'mangesh@firstclub.co.in', defaultPass, 'driver', 'v1', 'Mangesh', '+91 98765 11111', '', 'Bengaluru', 'Bellandur, Sarjapur');
 
-  blrWaypoints.forEach(wp => {
-    insertPing.run('veh_1', 'c3', wp[0], wp[1], wp[2], wp[3], wp[4], 0, 'foreground', wp[5]);
-  });
+  // 4. Vendor Manager: Akash
+  db.prepare(`
+    INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role, vendor_id = excluded.vendor_id, full_name = excluded.full_name
+  `).run('u_vm1', 'vendor.akash@firstclub.co.in', defaultPass, 'vendor_manager', 'v1', 'Akash (Vendor Manager)', '+91 98000 11111', '', 'Bengaluru', 'Bengaluru Corridors');
 
-  const insertAlert = db.prepare('INSERT INTO alerts (id, vehicle_id, alert_type, severity, message, timestamp) VALUES (?, ?, ?, ?, ?, datetime(\'now\', \'-45 minutes\'))');
-  insertAlert.run('alt_1', 'veh_1', 'GEOFENCE_BREACH', 'CRITICAL', 'Vehicle MH-02-CL-8821 detected outside assigned Mumbai zone near Dadar T.T.');
-
-  console.log('[DB] Seeding completed successfully!');
+  console.log('[DB] Production accounts configured (Akash, Bapu, Mangesh). Demo accounts cleaned.');
 }
 
 initDatabase();
