@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Logs
+*.log
+logs/
+
+# Database (SQLite + WAL/SHM files)
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Driver photo proof uploads (keep folder structure, ignore actual uploads)
+uploads/proofs/*
+!uploads/proofs/.gitkeep
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Coverage
+coverage/
+
+# Cache
+.cache/
+
+# Temporary
+tmp/
+temp/
+
+# Generated reports (test/demo PDFs shouldn't be committed)
+*.pdf
