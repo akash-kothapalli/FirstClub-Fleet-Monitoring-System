@@ -3,14 +3,17 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 
-const dataDir = path.join(process.cwd(), 'data');
-const uploadsDir = path.join(process.cwd(), 'uploads', 'proofs');
+// Environment-aware persistent database path (Supports Render Persistent Disks /var/data)
+const dataDir = process.env.DATA_DIR || (fs.existsSync('/var/data') ? '/var/data' : path.join(process.cwd(), 'data'));
+const uploadsDir = process.env.UPLOADS_DIR || (fs.existsSync('/var/data/uploads') ? '/var/data/uploads' : path.join(process.cwd(), 'uploads', 'proofs'));
 
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 const dbPath = path.join(dataDir, 'fleet.db');
 const db = new DatabaseSync(dbPath);
+
+console.log(`[DATABASE] SQLite Database Connected at: ${dbPath}`);
 
 db.exec(`
   PRAGMA journal_mode = WAL;
@@ -229,7 +232,7 @@ function hashPassword(password) {
 function seedDefaultProductionAccountsIfMissing() {
   const defaultPass = hashPassword('password123');
 
-  // Ensure default vendor v1 exists so driver self-registration never fails Foreign Key checks
+  // Ensure default vendor v1 exists
   db.prepare(`
     INSERT OR IGNORE INTO vendors (id, name, contact_email, phone) VALUES (?, ?, ?, ?)
   `).run('v1', 'Akash Outdoor Media', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111');
@@ -257,6 +260,38 @@ function seedDefaultProductionAccountsIfMissing() {
     INSERT OR IGNORE INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run('u_vm1', 'vendor.akash@firstclub.co.in', defaultPass, 'vendor_manager', 'v1', 'Akash (Vendor Manager)', '+91 98000 11111', '', 'Bengaluru', 'Bengaluru Corridors');
+
+  // Default Initial Campaign Provisioning (INSERT OR IGNORE)
+  db.prepare(`
+    INSERT OR IGNORE INTO campaigns (id, name, client, city, target_km_per_day, geofence_json)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run('c1', 'FirstClub Outdoor LED Campaign', 'FirstClub Brand', 'Bengaluru', 90, '[]');
+
+  // Default Initial Vehicles Provisioning (INSERT OR IGNORE)
+  db.prepare(`
+    INSERT OR IGNORE INTO vehicles (id, plate_number, vendor_id, assigned_driver_id, display_size, current_city, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'Offline')
+  `).run('veh_1', 'KA-05-8688', 'v1', 'u_d_mangesh', '12x6 ft Dual LED', 'Bengaluru');
+
+  db.prepare(`
+    INSERT OR IGNORE INTO vehicles (id, plate_number, vendor_id, assigned_driver_id, display_size, current_city, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'Offline')
+  `).run('veh_2', 'MH-02-CL-8821', 'v1', null, '12x6 ft Dual LED', 'Mumbai');
+
+  db.prepare(`
+    INSERT OR IGNORE INTO vehicles (id, plate_number, vendor_id, assigned_driver_id, display_size, current_city, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'Offline')
+  `).run('veh_3', 'DL-01-AB-1234', 'v1', null, '12x6 ft Dual LED', 'Delhi');
+
+  db.prepare(`
+    INSERT OR IGNORE INTO vehicle_campaigns (vehicle_id, campaign_id) VALUES (?, ?)
+  `).run('veh_1', 'c1');
+  db.prepare(`
+    INSERT OR IGNORE INTO vehicle_campaigns (vehicle_id, campaign_id) VALUES (?, ?)
+  `).run('veh_2', 'c1');
+  db.prepare(`
+    INSERT OR IGNORE INTO vehicle_campaigns (vehicle_id, campaign_id) VALUES (?, ?)
+  `).run('veh_3', 'c1');
 }
 
 initDatabase();
