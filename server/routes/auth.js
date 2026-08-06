@@ -30,7 +30,7 @@ router.post('/login', (req, res) => {
   return res.json(result);
 });
 
-// 2. Driver Self-Registration Endpoint
+// 2. Driver Self-Registration Endpoint with Safe Vendor Handling
 router.post('/register', (req, res) => {
   const { fullName, email, password, phone, secondaryPhone, targetCity, targetCampaignAreas } = req.body;
 
@@ -43,15 +43,21 @@ router.post('/register', (req, res) => {
     return res.status(400).json({ error: 'An account with this email already exists' });
   }
 
+  // Ensure default vendor 'v1' exists in database to prevent Foreign Key constraint errors
+  db.prepare(`
+    INSERT OR IGNORE INTO vendors (id, name, contact_email, phone)
+    VALUES ('v1', 'Akash Outdoor Media', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111')
+  `).run();
+
   const userId = `u_drv_${Date.now()}`;
   const passHash = hashPassword(password);
-  const vendorId = 'v1'; // Default to Akash Outdoor Media partner
+  const vendorId = 'v1';
 
   try {
     db.prepare(`
       INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
       VALUES (?, ?, ?, 'driver', ?, ?, ?, ?, ?, ?)
-    `).run(userId, email, passHash, vendorId, fullName, phone, secondaryPhone || '', targetCity || 'Mumbai', targetCampaignAreas || '');
+    `).run(userId, email, passHash, vendorId, fullName, phone, secondaryPhone || '', targetCity || 'Bengaluru', targetCampaignAreas || '');
 
     const tokenPayload = {
       userId,

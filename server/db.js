@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 
 const dataDir = path.join(process.cwd(), 'data');
 const uploadsDir = path.join(process.cwd(), 'uploads', 'proofs');
@@ -217,6 +218,45 @@ export function initDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_alerts_vehicle_time ON alerts(vehicle_id, timestamp);
   `);
+
+  seedDefaultProductionAccountsIfMissing();
+}
+
+function hashPassword(password) {
+  return crypto.createHash('sha256').update(password + 'firstclub_salt_2026').digest('hex');
+}
+
+function seedDefaultProductionAccountsIfMissing() {
+  const defaultPass = hashPassword('password123');
+
+  // Ensure default vendor v1 exists so driver self-registration never fails Foreign Key checks
+  db.prepare(`
+    INSERT OR IGNORE INTO vendors (id, name, contact_email, phone) VALUES (?, ?, ?, ?)
+  `).run('v1', 'Akash Outdoor Media', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111');
+
+  // 1. Ops Manager: Akash (akash.kothapalli@firstclub.co.in / password123)
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('u_ops1', 'akash.kothapalli@firstclub.co.in', defaultPass, 'ops_manager', null, 'Akash', '+91 98000 11111', '', 'Bengaluru', 'Bellandur, Sarjapur, Indiranagar');
+
+  // 2. Ops Manager: Bapu (bapu.kale@firstclub.co.in / password123)
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('u_ops2', 'bapu.kale@firstclub.co.in', defaultPass, 'ops_manager', null, 'Bapu', '+91 98000 22222', '', 'Mumbai', 'Marine Drive, BKC, Worli');
+
+  // 3. Driver: Mangesh (mangesh@firstclub.co.in / password123)
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('u_d_mangesh', 'mangesh@firstclub.co.in', defaultPass, 'driver', 'v1', 'Mangesh', '+91 98765 11111', '', 'Bengaluru', 'Bellandur, Sarjapur');
+
+  // 4. Vendor Manager: Akash (vendor.akash@firstclub.co.in / password123)
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('u_vm1', 'vendor.akash@firstclub.co.in', defaultPass, 'vendor_manager', 'v1', 'Akash (Vendor Manager)', '+91 98000 11111', '', 'Bengaluru', 'Bengaluru Corridors');
 }
 
 initDatabase();
