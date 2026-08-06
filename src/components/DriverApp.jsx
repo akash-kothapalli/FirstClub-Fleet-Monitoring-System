@@ -47,7 +47,7 @@ export function DriverApp() {
 
       if (myVehicle.current_area && myVehicle.current_area !== 'Bellandur & Sarjapur Tech Corridor' && myVehicle.current_area !== 'Fetching location...') {
         const area = myVehicle.current_area;
-        const city = myVehicle.current_city && myVehicle.current_city !== 'Fetching location...' ? `, ${myVehicle.current_city}` : '';
+        const city = (myVehicle.current_city && myVehicle.current_city !== 'Fetching location...' && !area.toLowerCase().includes(myVehicle.current_city.toLowerCase())) ? `, ${myVehicle.current_city}` : '';
         setCurrentAddress(`${area}${city}`);
       } else if (myVehicle.current_lat && myVehicle.current_lng) {
         setCurrentAddress(`GPS Location (${myVehicle.current_lat.toFixed(4)}°, ${myVehicle.current_lng.toFixed(4)}°)`);

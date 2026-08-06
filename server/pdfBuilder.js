@@ -29,7 +29,7 @@ function formatISTTime(dateInput) {
 
 export async function generateDailyAuditReport(vehicleId, dateStr) {
   const vehicle = await db.prepare(`
-    SELECT v.*, u.full_name as driver_name, u.email as driver_email, ven.name as vendor_name 
+    SELECT v.*, u.full_name as driver_name, u.email as driver_email, u.target_city as driver_target_city, ven.name as vendor_name 
     FROM vehicles v
     LEFT JOIN users u ON v.assigned_driver_id = u.id
     LEFT JOIN vendors ven ON v.vendor_id = ven.id
@@ -109,20 +109,23 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     return { ...p, photo_base64: base64Src, timeFormatted: formatISTTime(p.timestamp) };
   });
 
-  // Strict 10-Minute Telemetry Corridor Log Sampling (09:00, 09:10, 09:20...) plus break events
+  // Strict 10-Minute Telemetry Corridor Log Sampling (09:00, 09:10, 09:20...) plus break start/end transitions
   const sampledPings = [];
   let lastSampledTime = 0;
+  let lastBreakStatus = null;
   const SAMPLE_INTERVAL_MS = 10 * 60 * 1000; // Strictly 10 minutes
 
   pings.forEach((p, idx) => {
     const pingTime = new Date(p.timestamp).getTime();
     const isFirstOrLast = (idx === 0 || idx === pings.length - 1);
-    const isBreakEvent = Boolean(p.is_break || p.break_type);
+    const currentBreakStatus = p.break_type || (p.is_break ? 'On Break' : null);
+    const isBreakTransition = (currentBreakStatus !== lastBreakStatus);
     const isTimeIntervalReached = (pingTime - lastSampledTime >= SAMPLE_INTERVAL_MS);
 
-    if (isFirstOrLast || isBreakEvent || isTimeIntervalReached) {
+    if (isFirstOrLast || isBreakTransition || isTimeIntervalReached) {
       sampledPings.push(p);
       lastSampledTime = pingTime;
+      lastBreakStatus = currentBreakStatus;
     }
   });
 
@@ -132,6 +135,7 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
   const logoBase64 = getLogoBase64();
   const currentISTTime = formatISTTime(new Date());
   const vendorDisplayName = vehicle.vendor_name || 'Envision Advertising';
+  const targetCityDisplay = vehicle.driver_target_city || vehicle.current_city || 'Bengaluru';
 
   const reportPayload = {
     reportId: `REP-${vehicleId}-${dateStr || 'LATEST'}`,
@@ -243,7 +247,7 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     <div class="meta-item"><span class="meta-label">Vendor Partner</span><span class="meta-val">${vendorDisplayName}</span></div>
     <div class="meta-item"><span class="meta-label">Assigned Driver</span><span class="meta-val">${vehicle.driver_name || 'Unassigned Driver'}</span></div>
     <div class="meta-item"><span class="meta-label">Display Specs</span><span class="meta-val">${vehicle.display_size}</span></div>
-    <div class="meta-item"><span class="meta-label">Target City</span><span class="meta-val">${vehicle.current_city || 'Fetching location...'}</span></div>
+    <div class="meta-item"><span class="meta-label">Target City</span><span class="meta-val">${targetCityDisplay}</span></div>
     <div class="meta-item"><span class="meta-label">Target Km/Day</span><span class="meta-val">${targetDist} km</span></div>
   </div>
 

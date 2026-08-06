@@ -1,3 +1,6 @@
+process.env.TURSO_DATABASE_URL = '';
+process.env.TURSO_AUTH_TOKEN = '';
+
 import './geofence.test.js';
 import './alertRules.test.js';
 import './telemetry.test.js';

@@ -11,7 +11,7 @@ export function AdminPanel({ isOpen, onClose }) {
   const [editingVehicleId, setEditingVehicleId] = useState(null);
   const [viewVehicle, setViewVehicle] = useState(null);
 
-  const [vehId, setVehId] = useState(`veh_${Date.now()}`);
+  const [vehId, setVehId] = useState(`VEH-${Math.floor(100 + Math.random() * 900)}`);
   const [plateNumber, setPlateNumber] = useState('');
   const [vendorId, setVendorId] = useState(user?.vendorId || 'v1');
   const [currentCity, setCurrentCity] = useState('Bengaluru');
@@ -47,7 +47,7 @@ export function AdminPanel({ isOpen, onClose }) {
 
   function resetForm() {
     setEditingVehicleId(null);
-    setVehId(`veh_${Date.now()}`);
+    setVehId(`VEH-${Math.floor(100 + Math.random() * 900)}`);
     setPlateNumber('');
     setAssignedDriverId('');
     setErrorMsg('');

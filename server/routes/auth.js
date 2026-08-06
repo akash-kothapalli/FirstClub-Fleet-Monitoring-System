@@ -43,7 +43,7 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'An account with this email already exists' });
   }
 
-  // Ensure default vendor 'v1' exists in database to prevent Foreign Key constraint errors
+  // Ensure default vendor 'v1' exists in database as Envision Advertising
   await db.prepare(`
     INSERT OR IGNORE INTO vendors (id, name, contact_email, phone)
     VALUES ('v1', 'Envision Advertising', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111')
@@ -65,7 +65,11 @@ router.post('/register', async (req, res) => {
       role: 'driver',
       vendorId,
       fullName,
-      full_name: fullName
+      full_name: fullName,
+      phone: phone || '',
+      secondary_phone: secondaryPhone || '',
+      target_city: targetCity || 'Bengaluru',
+      target_campaign_areas: targetCampaignAreas || ''
     };
 
     const token = generateToken(tokenPayload, 12);
@@ -77,7 +81,20 @@ router.post('/register', async (req, res) => {
       maxAge: 12 * 3600 * 1000
     });
 
-    return res.json({ success: true, token, user: tokenPayload });
+    const userObj = {
+      id: userId,
+      email,
+      role: 'driver',
+      vendorId,
+      fullName,
+      full_name: fullName,
+      phone: phone || '',
+      secondary_phone: secondaryPhone || '',
+      target_city: targetCity || 'Bengaluru',
+      target_campaign_areas: targetCampaignAreas || ''
+    };
+
+    return res.json({ success: true, token, user: userObj });
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
@@ -108,11 +125,12 @@ router.post('/driver-profile', authMiddleware, async (req, res) => {
   }
 });
 
-// 4. Get Registered Drivers List (For Admin CRUD Auto-Population)
+// 4. Get Registered Drivers List (For Admin CRUD Auto-Population & Ops Manager Roster)
 router.get('/drivers', authMiddleware, async (req, res) => {
   const drivers = await db.prepare(`
     SELECT id, email, full_name, phone, secondary_phone, target_city, target_campaign_areas, vendor_id 
     FROM users WHERE role = 'driver'
+    ORDER BY created_at DESC
   `).all();
 
   return res.json({ drivers });

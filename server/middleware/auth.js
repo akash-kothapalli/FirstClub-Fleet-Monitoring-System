@@ -66,7 +66,11 @@ export async function loginUser(email, password) {
     email: user.email,
     role: user.role,
     vendorId: user.vendor_id,
-    fullName: user.full_name
+    fullName: user.full_name,
+    phone: user.phone || '',
+    secondary_phone: user.secondary_phone || '',
+    target_city: user.target_city || 'Bengaluru',
+    target_campaign_areas: user.target_campaign_areas || ''
   };
 
   const token = generateToken(tokenPayload, 12);
@@ -81,7 +85,12 @@ export async function loginUser(email, password) {
       email: user.email,
       role: user.role,
       vendorId: user.vendor_id,
-      fullName: user.full_name
+      fullName: user.full_name,
+      full_name: user.full_name,
+      phone: user.phone || '',
+      secondary_phone: user.secondary_phone || '',
+      target_city: user.target_city || 'Bengaluru',
+      target_campaign_areas: user.target_campaign_areas || ''
     }
   };
 }
