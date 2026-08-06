@@ -1,28 +1,76 @@
+import { createClient } from '@libsql/client';
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 
-// Environment-aware persistent database path (Supports Render Persistent Disks /var/data)
+const tursoUrl = process.env.TURSO_DATABASE_URL;
+const tursoToken = process.env.TURSO_AUTH_TOKEN;
+
 const dataDir = process.env.DATA_DIR || (fs.existsSync('/var/data') ? '/var/data' : path.join(process.cwd(), 'data'));
 const uploadsDir = process.env.UPLOADS_DIR || (fs.existsSync('/var/data/uploads') ? '/var/data/uploads' : path.join(process.cwd(), 'uploads', 'proofs'));
 
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-const dbPath = path.join(dataDir, 'fleet.db');
-const db = new DatabaseSync(dbPath);
+function flattenArgs(args) {
+  if (args.length === 1 && Array.isArray(args[0])) return args[0];
+  return args;
+}
 
-console.log(`[DATABASE] SQLite Database Connected at: ${dbPath}`);
+let db;
 
-db.exec(`
-  PRAGMA journal_mode = WAL;
-  PRAGMA synchronous = NORMAL;
-  PRAGMA foreign_keys = ON;
-`);
+if (tursoUrl && tursoToken) {
+  console.log(`[DATABASE] ☁️ Connected to Turso Cloud SQLite: ${tursoUrl}`);
+  const client = createClient({ url: tursoUrl, authToken: tursoToken });
 
-export function initDatabase() {
-  db.exec(`
+  db = {
+    isTurso: true,
+    prepare(sql) {
+      return {
+        async get(...args) {
+          const res = await client.execute({ sql, args: flattenArgs(args) });
+          return res.rows[0] ? { ...res.rows[0] } : null;
+        },
+        async all(...args) {
+          const res = await client.execute({ sql, args: flattenArgs(args) });
+          return res.rows.map(r => ({ ...r }));
+        },
+        async run(...args) {
+          const res = await client.execute({ sql, args: flattenArgs(args) });
+          return { changes: res.rowsAffected, lastInsertRowid: res.lastInsertRowid };
+        }
+      };
+    },
+    async exec(sql) {
+      const statements = sql
+        .split(';')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
+
+      if (statements.length === 1) {
+        await client.execute(statements[0]);
+      } else if (statements.length > 1) {
+        await client.batch(statements.map(s => ({ sql: s, args: [] })), 'write');
+      }
+    }
+  };
+} else {
+  const dbPath = path.join(dataDir, 'fleet.db');
+  console.log(`[DATABASE] 📁 Connected to Local SQLite Database: ${dbPath}`);
+  const localDb = new DatabaseSync(dbPath);
+
+  localDb.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA foreign_keys = ON;
+  `);
+
+  db = localDb;
+}
+
+export async function initDatabase() {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS vendors (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -50,13 +98,13 @@ export function initDatabase() {
 
   // Safe migrations for users
   const userColumns = ['phone', 'secondary_phone', 'target_city', 'target_campaign_areas'];
-  userColumns.forEach(col => {
+  for (const col of userColumns) {
     try {
-      db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT;`);
+      await db.exec(`ALTER TABLE users ADD COLUMN ${col} TEXT;`);
     } catch (e) {}
-  });
+  }
 
-  db.exec(`
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -100,13 +148,13 @@ export function initDatabase() {
     { name: 'is_duty_active', type: 'INTEGER DEFAULT 1' }
   ];
 
-  vehicleColumns.forEach(col => {
+  for (const col of vehicleColumns) {
     try {
-      db.exec(`ALTER TABLE vehicles ADD COLUMN ${col.name} ${col.type};`);
+      await db.exec(`ALTER TABLE vehicles ADD COLUMN ${col.name} ${col.type};`);
     } catch (e) {}
-  });
+  }
 
-  db.exec(`
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       id TEXT PRIMARY KEY,
       executed_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -151,12 +199,11 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_pings_vehicle_time ON telemetry_pings(vehicle_id, timestamp);
   `);
 
-  // Safe migration for telemetry_pings
   try {
-    db.exec(`ALTER TABLE telemetry_pings ADD COLUMN break_type TEXT;`);
+    await db.exec(`ALTER TABLE telemetry_pings ADD COLUMN break_type TEXT;`);
   } catch (e) {}
 
-  db.exec(`
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS campaign_photo_proofs (
       id TEXT PRIMARY KEY,
       vehicle_id TEXT NOT NULL,
@@ -194,20 +241,19 @@ export function initDatabase() {
     );
   `);
 
-  // Safe migrations for approved_breaks
   const breakColumns = [
     { name: 'lat', type: 'REAL' },
     { name: 'lng', type: 'REAL' },
     { name: 'address', type: 'TEXT' }
   ];
 
-  breakColumns.forEach(col => {
+  for (const col of breakColumns) {
     try {
-      db.exec(`ALTER TABLE approved_breaks ADD COLUMN ${col.name} ${col.type};`);
+      await db.exec(`ALTER TABLE approved_breaks ADD COLUMN ${col.name} ${col.type};`);
     } catch (e) {}
-  });
+  }
 
-  db.exec(`
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS alerts (
       id TEXT PRIMARY KEY,
       vehicle_id TEXT NOT NULL,
@@ -222,78 +268,44 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_alerts_vehicle_time ON alerts(vehicle_id, timestamp);
   `);
 
-  seedDefaultProductionAccountsIfMissing();
+  await seedEssentialManagerAccountsOnly();
 }
 
 function hashPassword(password) {
   return crypto.createHash('sha256').update(password + 'firstclub_salt_2026').digest('hex');
 }
 
-function seedDefaultProductionAccountsIfMissing() {
+async function seedEssentialManagerAccountsOnly() {
   const defaultPass = hashPassword('password123');
 
-  // Ensure default vendor v1 exists
-  db.prepare(`
+  // Ensure default partner vendor v1 exists so driver self-registration never fails Foreign Key checks
+  await db.prepare(`
     INSERT OR IGNORE INTO vendors (id, name, contact_email, phone) VALUES (?, ?, ?, ?)
   `).run('v1', 'Akash Outdoor Media', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111');
 
+  // Ensure default campaign c1 exists
+  await db.prepare(`
+    INSERT OR IGNORE INTO campaigns (id, name, client, city, target_km_per_day, geofence_json)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run('c1', 'FirstClub Outdoor LED Campaign', 'FirstClub Brand', 'Bengaluru', 90, '[]');
+
   // 1. Ops Manager: Akash (akash.kothapalli@firstclub.co.in / password123)
-  db.prepare(`
+  await db.prepare(`
     INSERT OR IGNORE INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run('u_ops1', 'akash.kothapalli@firstclub.co.in', defaultPass, 'ops_manager', null, 'Akash', '+91 98000 11111', '', 'Bengaluru', 'Bellandur, Sarjapur, Indiranagar');
 
   // 2. Ops Manager: Bapu (bapu.kale@firstclub.co.in / password123)
-  db.prepare(`
+  await db.prepare(`
     INSERT OR IGNORE INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run('u_ops2', 'bapu.kale@firstclub.co.in', defaultPass, 'ops_manager', null, 'Bapu', '+91 98000 22222', '', 'Mumbai', 'Marine Drive, BKC, Worli');
 
-  // 3. Driver: Mangesh (mangesh@firstclub.co.in / password123)
-  db.prepare(`
-    INSERT OR IGNORE INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run('u_d_mangesh', 'mangesh@firstclub.co.in', defaultPass, 'driver', 'v1', 'Mangesh', '+91 98765 11111', '', 'Bengaluru', 'Bellandur, Sarjapur');
-
-  // 4. Vendor Manager: Akash (vendor.akash@firstclub.co.in / password123)
-  db.prepare(`
+  // 3. Vendor Manager: Akash (vendor.akash@firstclub.co.in / password123)
+  await db.prepare(`
     INSERT OR IGNORE INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run('u_vm1', 'vendor.akash@firstclub.co.in', defaultPass, 'vendor_manager', 'v1', 'Akash (Vendor Manager)', '+91 98000 11111', '', 'Bengaluru', 'Bengaluru Corridors');
-
-  // Default Initial Campaign Provisioning (INSERT OR IGNORE)
-  db.prepare(`
-    INSERT OR IGNORE INTO campaigns (id, name, client, city, target_km_per_day, geofence_json)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run('c1', 'FirstClub Outdoor LED Campaign', 'FirstClub Brand', 'Bengaluru', 90, '[]');
-
-  // Default Initial Vehicles Provisioning (INSERT OR IGNORE)
-  db.prepare(`
-    INSERT OR IGNORE INTO vehicles (id, plate_number, vendor_id, assigned_driver_id, display_size, current_city, status)
-    VALUES (?, ?, ?, ?, ?, ?, 'Offline')
-  `).run('veh_1', 'KA-05-8688', 'v1', 'u_d_mangesh', '12x6 ft Dual LED', 'Bengaluru');
-
-  db.prepare(`
-    INSERT OR IGNORE INTO vehicles (id, plate_number, vendor_id, assigned_driver_id, display_size, current_city, status)
-    VALUES (?, ?, ?, ?, ?, ?, 'Offline')
-  `).run('veh_2', 'MH-02-CL-8821', 'v1', null, '12x6 ft Dual LED', 'Mumbai');
-
-  db.prepare(`
-    INSERT OR IGNORE INTO vehicles (id, plate_number, vendor_id, assigned_driver_id, display_size, current_city, status)
-    VALUES (?, ?, ?, ?, ?, ?, 'Offline')
-  `).run('veh_3', 'DL-01-AB-1234', 'v1', null, '12x6 ft Dual LED', 'Delhi');
-
-  db.prepare(`
-    INSERT OR IGNORE INTO vehicle_campaigns (vehicle_id, campaign_id) VALUES (?, ?)
-  `).run('veh_1', 'c1');
-  db.prepare(`
-    INSERT OR IGNORE INTO vehicle_campaigns (vehicle_id, campaign_id) VALUES (?, ?)
-  `).run('veh_2', 'c1');
-  db.prepare(`
-    INSERT OR IGNORE INTO vehicle_campaigns (vehicle_id, campaign_id) VALUES (?, ?)
-  `).run('veh_3', 'c1');
 }
-
-initDatabase();
 
 export default db;

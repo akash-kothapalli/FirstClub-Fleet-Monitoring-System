@@ -13,8 +13,6 @@ import reportRoutes from './routes/reports.js';
 import { verifyToken } from './middleware/auth.js';
 import { sseClients } from './sse.js';
 
-initDatabase();
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DIST_DIR = path.join(process.cwd(), 'dist');
@@ -41,9 +39,9 @@ app.use('/api/campaigns', campaignRoutes);
 app.use('/api/reports', reportRoutes);
 
 // Real-Time Server-Sent Events (SSE) Stream
-app.get('/api/events', (req, res) => {
+app.get('/api/events', async (req, res) => {
   let token = req.cookies?.fleet_token || req.query.token;
-  const user = verifyToken(token);
+  const user = await verifyToken(token);
 
   if (!user) {
     return res.status(401).json({ error: 'Unauthorized SSE connection' });
@@ -63,13 +61,13 @@ app.get('/api/events', (req, res) => {
 });
 
 // Health check
-app.get('/api/health', (req, res) => {
-  const dbCheck = db.prepare('SELECT COUNT(*) as count FROM vehicles').get();
+app.get('/api/health', async (req, res) => {
+  const dbCheck = await db.prepare('SELECT COUNT(*) as count FROM vehicles').get();
   res.json({
     status: 'HEALTHY',
     timestamp: new Date().toISOString(),
     activeSSEClients: sseClients.size,
-    vehiclesTracked: dbCheck.count,
+    vehiclesTracked: dbCheck ? dbCheck.count : 0,
     nodeVersion: process.version
   });
 });
@@ -88,10 +86,15 @@ app.get('*', (req, res) => {
   return res.sendFile(path.join(process.cwd(), 'index.html'));
 });
 
-app.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`⚡ FirstClub FFMS Express Server Running!`);
-  console.log(`🌐 Application URL: http://localhost:${PORT}`);
-  console.log(`🔒 SQLite WAL Mode: Enabled | Real-Time SSE: Active`);
-  console.log(`=======================================================`);
-});
+async function startServer() {
+  await initDatabase();
+  app.listen(PORT, () => {
+    console.log(`=======================================================`);
+    console.log(`⚡ FirstClub FFMS Express Server Running!`);
+    console.log(`🌐 Application URL: http://localhost:${PORT}`);
+    console.log(`☁️ Turso Cloud SQLite Persistent Storage Active!`);
+    console.log(`=======================================================`);
+  });
+}
+
+startServer();

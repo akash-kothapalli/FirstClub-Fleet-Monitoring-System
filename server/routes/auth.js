@@ -10,13 +10,13 @@ function hashPassword(password) {
 }
 
 // 1. Log In Endpoint
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password required' });
   }
 
-  const result = loginUser(email, password);
+  const result = await loginUser(email, password);
   if (result.error) {
     return res.status(401).json({ error: result.error });
   }
@@ -31,20 +31,20 @@ router.post('/login', (req, res) => {
 });
 
 // 2. Driver Self-Registration Endpoint with Safe Vendor Handling
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   const { fullName, email, password, phone, secondaryPhone, targetCity, targetCampaignAreas } = req.body;
 
   if (!email || !password || !fullName || !phone) {
     return res.status(400).json({ error: 'Full Name, Email, Password, and Primary Phone are required' });
   }
 
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) {
     return res.status(400).json({ error: 'An account with this email already exists' });
   }
 
   // Ensure default vendor 'v1' exists in database to prevent Foreign Key constraint errors
-  db.prepare(`
+  await db.prepare(`
     INSERT OR IGNORE INTO vendors (id, name, contact_email, phone)
     VALUES ('v1', 'Akash Outdoor Media', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111')
   `).run();
@@ -54,7 +54,7 @@ router.post('/register', (req, res) => {
   const vendorId = 'v1';
 
   try {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
       VALUES (?, ?, ?, 'driver', ?, ?, ?, ?, ?, ?)
     `).run(userId, email, passHash, vendorId, fullName, phone, secondaryPhone || '', targetCity || 'Bengaluru', targetCampaignAreas || '');
@@ -69,7 +69,7 @@ router.post('/register', (req, res) => {
     };
 
     const token = generateToken(tokenPayload, 12);
-    db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime(\'now\', \'+12 hours\'))').run(token, userId);
+    await db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime(\'now\', \'+12 hours\'))').run(token, userId);
 
     res.cookie('fleet_token', token, {
       httpOnly: true,
@@ -84,12 +84,12 @@ router.post('/register', (req, res) => {
 });
 
 // 3. Driver Profile Update Endpoint
-router.post('/driver-profile', authMiddleware, (req, res) => {
+router.post('/driver-profile', authMiddleware, async (req, res) => {
   const { phone, secondary_phone, target_city, target_campaign_areas } = req.body;
   const userId = req.user.userId;
 
   try {
-    db.prepare(`
+    await db.prepare(`
       UPDATE users 
       SET phone = COALESCE(?, phone),
           secondary_phone = COALESCE(?, secondary_phone),
@@ -98,7 +98,7 @@ router.post('/driver-profile', authMiddleware, (req, res) => {
       WHERE id = ?
     `).run(phone, secondary_phone, target_city, target_campaign_areas, userId);
 
-    const updatedUser = db.prepare('SELECT id, email, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas FROM users WHERE id = ?').get(userId);
+    const updatedUser = await db.prepare('SELECT id, email, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas FROM users WHERE id = ?').get(userId);
     if (updatedUser) {
       updatedUser.fullName = updatedUser.full_name;
     }
@@ -109,8 +109,8 @@ router.post('/driver-profile', authMiddleware, (req, res) => {
 });
 
 // 4. Get Registered Drivers List (For Admin CRUD Auto-Population)
-router.get('/drivers', authMiddleware, (req, res) => {
-  const drivers = db.prepare(`
+router.get('/drivers', authMiddleware, async (req, res) => {
+  const drivers = await db.prepare(`
     SELECT id, email, full_name, phone, secondary_phone, target_city, target_campaign_areas, vendor_id 
     FROM users WHERE role = 'driver'
   `).all();
@@ -119,15 +119,15 @@ router.get('/drivers', authMiddleware, (req, res) => {
 });
 
 // 5. Log Out Endpoint
-router.post('/logout', authMiddleware, (req, res) => {
-  if (req.token) revokeToken(req.token);
+router.post('/logout', authMiddleware, async (req, res) => {
+  if (req.token) await revokeToken(req.token);
   res.clearCookie('fleet_token');
   return res.json({ success: true });
 });
 
 // 6. Current User Session Check
-router.get('/me', authMiddleware, (req, res) => {
-  const fullUser = db.prepare('SELECT id, email, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas FROM users WHERE id = ?').get(req.user.userId);
+router.get('/me', authMiddleware, async (req, res) => {
+  const fullUser = await db.prepare('SELECT id, email, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas FROM users WHERE id = ?').get(req.user.userId);
   if (fullUser) {
     fullUser.fullName = fullUser.full_name;
   }
@@ -135,9 +135,9 @@ router.get('/me', authMiddleware, (req, res) => {
 });
 
 // 7. Revoke Session
-router.post('/revoke', authMiddleware, requireRole('ops_manager'), (req, res) => {
+router.post('/revoke', authMiddleware, requireRole('ops_manager'), async (req, res) => {
   const { tokenToRevoke } = req.body;
-  if (tokenToRevoke) revokeToken(tokenToRevoke);
+  if (tokenToRevoke) await revokeToken(tokenToRevoke);
   return res.json({ success: true });
 });
 

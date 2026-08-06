@@ -27,8 +27,8 @@ function formatISTTime(dateInput) {
   });
 }
 
-export function generateDailyAuditReport(vehicleId, dateStr) {
-  const vehicle = db.prepare(`
+export async function generateDailyAuditReport(vehicleId, dateStr) {
+  const vehicle = await db.prepare(`
     SELECT v.*, u.full_name as driver_name, u.email as driver_email, ven.name as vendor_name 
     FROM vehicles v
     LEFT JOIN users u ON v.assigned_driver_id = u.id
@@ -38,21 +38,21 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
 
   if (!vehicle) return { error: 'Vehicle not found' };
 
-  const campaign = db.prepare(`
+  const campaign = await db.prepare(`
     SELECT c.* FROM campaigns c
     JOIN vehicle_campaigns vc ON c.id = vc.campaign_id
     WHERE vc.vehicle_id = ?
     LIMIT 1
   `).get(vehicleId) || { name: 'FirstClub Outdoor LED Campaign', client: 'FirstClub Brand', target_km_per_day: 90 };
 
-  const pings = db.prepare(`
+  const pings = await db.prepare(`
     SELECT * FROM telemetry_pings 
     WHERE vehicle_id = ?
     ORDER BY timestamp ASC
   `).all(vehicleId);
 
   // Fetch approved breaks for this vehicle permanently from approved_breaks table
-  let rawBreaks = db.prepare(`
+  let rawBreaks = await db.prepare(`
     SELECT * FROM approved_breaks
     WHERE vehicle_id = ?
     ORDER BY start_time ASC
@@ -83,7 +83,7 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
   });
 
   // Fetch photo proofs for this vehicle
-  let photoProofs = db.prepare(`
+  let photoProofs = await db.prepare(`
     SELECT * FROM campaign_photo_proofs
     WHERE vehicle_id = ?
     ORDER BY timestamp DESC LIMIT 6

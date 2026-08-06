@@ -4,15 +4,15 @@ import { authMiddleware, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
-router.get('/', authMiddleware, (req, res) => {
-  const campaigns = db.prepare('SELECT * FROM campaigns').all();
+router.get('/', authMiddleware, async (req, res) => {
+  const campaigns = await db.prepare('SELECT * FROM campaigns').all();
   return res.json({ campaigns });
 });
 
-router.post('/', authMiddleware, requireRole('ops_manager'), (req, res) => {
+router.post('/', authMiddleware, requireRole('ops_manager'), async (req, res) => {
   const { id, name, client, city, target_km_per_day, geofence_json, start_date, end_date } = req.body;
   try {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO campaigns (id, name, client, city, target_km_per_day, geofence_json, start_date, end_date)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, name, client, city, target_km_per_day || 80, JSON.stringify(geofence_json), start_date, end_date);

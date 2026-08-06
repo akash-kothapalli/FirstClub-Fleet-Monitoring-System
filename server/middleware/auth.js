@@ -25,7 +25,7 @@ export function generateToken(payload, expiresInHours = 12) {
   return `${b64Header}.${b64Payload}.${signature}`;
 }
 
-export function verifyToken(token) {
+export async function verifyToken(token) {
   if (!token) return null;
   try {
     const parts = token.split('.');
@@ -43,7 +43,7 @@ export function verifyToken(token) {
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp && payload.exp < now) return null;
 
-    const checkRevoked = db.prepare('SELECT revoked FROM sessions WHERE token = ?').get(token);
+    const checkRevoked = await db.prepare('SELECT revoked FROM sessions WHERE token = ?').get(token);
     if (checkRevoked && checkRevoked.revoked === 1) return null;
 
     return payload;
@@ -52,8 +52,8 @@ export function verifyToken(token) {
   }
 }
 
-export function loginUser(email, password) {
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+export async function loginUser(email, password) {
+  const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (!user) return { error: 'Invalid email or password' };
 
   const hashed = hashPassword(password);
@@ -72,7 +72,7 @@ export function loginUser(email, password) {
   const token = generateToken(tokenPayload, 12);
   const expiresAt = new Date(Date.now() + 12 * 3600 * 1000).toISOString();
 
-  db.prepare('INSERT OR REPLACE INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, expiresAt);
+  await db.prepare('INSERT OR REPLACE INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, user.id, expiresAt);
 
   return {
     token,
@@ -86,12 +86,13 @@ export function loginUser(email, password) {
   };
 }
 
-export function revokeToken(token) {
-  db.prepare('UPDATE sessions SET revoked = 1 WHERE token = ?').run(token);
+export async function revokeToken(token) {
+  if (!token) return { success: true };
+  await db.prepare('UPDATE sessions SET revoked = 1 WHERE token = ?').run(token);
   return { success: true };
 }
 
-export function authMiddleware(req, res, next) {
+export async function authMiddleware(req, res, next) {
   let token = req.cookies?.fleet_token;
   if (!token && req.headers.authorization) {
     token = req.headers.authorization.replace('Bearer ', '').trim();
@@ -101,7 +102,7 @@ export function authMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  const decoded = verifyToken(token);
+  const decoded = await verifyToken(token);
   if (!decoded) {
     return res.status(401).json({ error: 'Session expired or revoked' });
   }

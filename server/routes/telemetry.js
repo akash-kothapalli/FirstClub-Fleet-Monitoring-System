@@ -33,19 +33,19 @@ router.post('/ping', authMiddleware, livePingLimiter, async (req, res) => {
     return res.status(400).json({ error: 'vehicle_id, lat, lng required' });
   }
 
-  const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
+  const vehicle = await db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
   if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
 
   if (req.user.role === 'driver' && vehicle.assigned_driver_id !== req.user.userId) {
     return res.status(403).json({ error: 'Not authorized for this vehicle' });
   }
 
-  const campaign = db.prepare(`
+  const campaign = await db.prepare(`
     SELECT c.* FROM campaigns c
     JOIN vehicle_campaigns vc ON c.id = vc.campaign_id
     WHERE vc.vehicle_id = ?
     LIMIT 1
-  `).get(vehicle_id) || db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campaign_id || 'c1');
+  `).get(vehicle_id) || await db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campaign_id || 'c1');
 
   const currentSpeed = speed || 0;
   const currentBreakType = is_break ? (break_type || vehicle.active_break_type) : vehicle.active_break_type;
@@ -76,7 +76,7 @@ router.post('/ping', authMiddleware, livePingLimiter, async (req, res) => {
   const newIdleTime = vehicle.idle_time_mins + (currentSpeed === 0 && !is_break ? 0.5 : 0);
   const newBreakTime = vehicle.break_time_mins + (is_break ? 0.5 : 0);
 
-  db.prepare(`
+  await db.prepare(`
     UPDATE vehicles 
     SET current_lat = ?, current_lng = ?, current_speed = ?, heading = ?, status = ?,
         current_area = ?, current_city = ?, last_ping_time = datetime('now'), today_distance_km = ?,
@@ -84,7 +84,7 @@ router.post('/ping', authMiddleware, livePingLimiter, async (req, res) => {
     WHERE id = ?
   `).run(lat, lng, currentSpeed, heading || 0, newStatus, currentArea, currentCity, newTotalDist, newRunningTime, newIdleTime, newBreakTime, vehicle_id);
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, break_type, visibility_state)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(vehicle_id, campaign ? campaign.id : null, lat, lng, currentSpeed, heading || 0, currentArea, isBreakActive, currentBreakType || null, visibility_state || 'foreground');
@@ -104,20 +104,18 @@ router.post('/ping', authMiddleware, livePingLimiter, async (req, res) => {
 });
 
 // 2. Bulk Offline Batch Sync
-router.post('/batch', authMiddleware, batchPingLimiter, (req, res) => {
+router.post('/batch', authMiddleware, batchPingLimiter, async (req, res) => {
   const { vehicle_id, pings } = req.body;
   if (!vehicle_id || !Array.isArray(pings)) return res.status(400).json({ error: 'vehicle_id and pings array required' });
 
-  const insertStmt = db.prepare(`
-    INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, break_type, visibility_state, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
   let count = 0;
-  pings.slice(0, 100).forEach(p => {
-    insertStmt.run(vehicle_id, p.campaign_id || 'c1', p.lat, p.lng, p.speed || 0, p.heading || 0, p.address || 'Offline Queued Location', p.is_break ? 1 : 0, p.break_type || null, p.visibility_state || 'foreground', p.timestamp || new Date().toISOString());
+  for (const p of pings.slice(0, 100)) {
+    await db.prepare(`
+      INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, break_type, visibility_state, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(vehicle_id, p.campaign_id || 'c1', p.lat, p.lng, p.speed || 0, p.heading || 0, p.address || 'Offline Queued Location', p.is_break ? 1 : 0, p.break_type || null, p.visibility_state || 'foreground', p.timestamp || new Date().toISOString());
     count++;
-  });
+  }
 
   broadcastSSE('vehicle_updated', { vehicle_id });
 
@@ -145,12 +143,12 @@ router.post('/photo-proof', authMiddleware, async (req, res) => {
   const address = await reverseGeocodeWithCache(lat || 18.9438, lng || 72.8232);
   const proofId = `prf_${Date.now()}`;
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO campaign_photo_proofs (id, vehicle_id, driver_id, photo_url, lat, lng, address)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(proofId, vehicle_id, req.user.userId, photoUrl, lat || 18.9438, lng || 72.8232, address);
 
-  const newProof = db.prepare('SELECT * FROM campaign_photo_proofs WHERE id = ?').get(proofId);
+  const newProof = await db.prepare('SELECT * FROM campaign_photo_proofs WHERE id = ?').get(proofId);
 
   // Real-time broadcast to Manager Dashboard
   broadcastSSE('photo_proof_uploaded', { vehicle_id, proof: newProof });
@@ -161,13 +159,13 @@ router.post('/photo-proof', authMiddleware, async (req, res) => {
 // 4. Approved Breaks Toggle Endpoint with Audit Logging & Real-Time SSE
 router.post('/breaks/toggle', authMiddleware, async (req, res) => {
   const { vehicle_id, break_type, is_starting, lat, lng } = req.body;
-  const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
+  const vehicle = await db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
   if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
 
   const newBreakType = is_starting ? break_type : null;
   const newStatus = is_starting ? 'On Approved Break' : (vehicle.current_speed > 0 ? 'Moving' : 'Idle');
 
-  db.prepare(`
+  await db.prepare(`
     UPDATE vehicles 
     SET status = ?, active_break_type = ? 
     WHERE id = ?
@@ -182,12 +180,12 @@ router.post('/breaks/toggle', authMiddleware, async (req, res) => {
   try {
     if (is_starting) {
       const breakId = `brk_${Date.now()}`;
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO approved_breaks (id, vehicle_id, driver_id, break_type, start_time, status, lat, lng, address)
         VALUES (?, ?, ?, ?, datetime('now'), 'ACTIVE', ?, ?, ?)
       `).run(breakId, vehicle_id, driverId, break_type, currentLat, currentLng, address);
     } else {
-      db.prepare(`
+      await db.prepare(`
         UPDATE approved_breaks
         SET end_time = datetime('now'), status = 'COMPLETED'
         WHERE vehicle_id = ? AND status = 'ACTIVE'
@@ -199,7 +197,7 @@ router.post('/breaks/toggle', authMiddleware, async (req, res) => {
 
   // Insert explicit telemetry ping for break event log in telemetry_pings
   try {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, break_type, visibility_state)
       VALUES (?, 'c1', ?, ?, 0, 0, ?, ?, ?, 'foreground')
     `).run(vehicle_id, currentLat, currentLng, `${is_starting ? 'Approved Break Start' : 'Approved Break End'} (${address})`, is_starting ? 1 : 0, break_type);

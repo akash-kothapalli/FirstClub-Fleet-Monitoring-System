@@ -3,15 +3,13 @@ import http from 'node:http';
 import db, { initDatabase } from '../server/db.js';
 import { loginUser } from '../server/middleware/auth.js';
 
-initDatabase();
-
-// Ensure temporary vehicle exists for offline sync testing
-db.prepare("INSERT OR REPLACE INTO vehicles (id, plate_number, vendor_id) VALUES ('veh_1', 'TEST-01-AB-1234', 'v1')").run();
-
 console.log('[TEST] Offline Telemetry Batch Ingestion & Auto-Sync');
 
 async function testBatchSync() {
-  const loginRes = loginUser('akash.kothapalli@firstclub.co.in', 'password123');
+  await initDatabase();
+  await db.prepare("INSERT OR REPLACE INTO vehicles (id, plate_number, vendor_id) VALUES ('veh_1', 'TEST-01-AB-1234', 'v1')").run();
+
+  const loginRes = await loginUser('akash.kothapalli@firstclub.co.in', 'password123');
   assert.ok(loginRes.token, 'Ops Manager login token should be generated');
 
   const pings = [

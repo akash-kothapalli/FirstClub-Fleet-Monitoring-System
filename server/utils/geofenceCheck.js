@@ -11,7 +11,7 @@ export async function reverseGeocodeWithCache(lat, lng) {
   const lngRounded = Math.round(lng * 1000) / 1000;
 
   try {
-    const cached = db.prepare('SELECT address FROM geocode_cache WHERE lat_rounded = ? AND lng_rounded = ?').get(latRounded, lngRounded);
+    const cached = await db.prepare('SELECT address FROM geocode_cache WHERE lat_rounded = ? AND lng_rounded = ?').get(latRounded, lngRounded);
     if (cached && cached.address) return cached.address;
   } catch (err) {}
 
@@ -28,7 +28,7 @@ export async function reverseGeocodeWithCache(lat, lng) {
     if (res.ok) {
       const data = await res.json();
       const fetchedAddress = data.display_name || data.name || fallbackAddress;
-      db.prepare('INSERT OR REPLACE INTO geocode_cache (lat_rounded, lng_rounded, address) VALUES (?, ?, ?)').run(latRounded, lngRounded, fetchedAddress);
+      await db.prepare('INSERT OR REPLACE INTO geocode_cache (lat_rounded, lng_rounded, address) VALUES (?, ?, ?)').run(latRounded, lngRounded, fetchedAddress);
       return fetchedAddress;
     }
   } catch (err) {

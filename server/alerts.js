@@ -30,7 +30,7 @@ export function dispatchNotification(alert) {
 /**
  * Process an incoming telemetry ping and evaluate automated alert rules.
  */
-export function evaluatePingAlerts(ping, vehicle, campaign, broadcastFn) {
+export async function evaluatePingAlerts(ping, vehicle, campaign, broadcastFn) {
   const generatedAlerts = [];
 
   // 1. Check Geofence Breach
@@ -44,7 +44,7 @@ export function evaluatePingAlerts(ping, vehicle, campaign, broadcastFn) {
 
       if (isBreachAlert) {
         // Check if an unacknowledged geofence alert was raised recently
-        const recentAlert = db.prepare(`
+        const recentAlert = await db.prepare(`
           SELECT id FROM alerts 
           WHERE vehicle_id = ? AND alert_type = 'GEOFENCE_BREACH' AND acknowledged = 0 
           AND timestamp > datetime('now', '-10 minutes')
@@ -54,7 +54,7 @@ export function evaluatePingAlerts(ping, vehicle, campaign, broadcastFn) {
           const alertId = 'alt_' + Date.now();
           const message = `GEOFENCE BREACH: Vehicle ${vehicle.plate_number} has been continuously out of assigned ${campaign.city} zone for ${Math.floor(durationSeconds / 60)} mins.`;
           
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO alerts (id, vehicle_id, alert_type, severity, message) 
             VALUES (?, ?, 'GEOFENCE_BREACH', 'CRITICAL', ?)
           `).run(alertId, vehicle.id, message);
@@ -82,7 +82,7 @@ export function evaluatePingAlerts(ping, vehicle, campaign, broadcastFn) {
   if (ping.speed === 0 && !ping.is_break) {
     const idleMins = vehicle.idle_time_mins || 0;
     if (idleMins >= 15) {
-      const recentIdleAlert = db.prepare(`
+      const recentIdleAlert = await db.prepare(`
         SELECT id FROM alerts 
         WHERE vehicle_id = ? AND alert_type = 'EXCESSIVE_IDLE' AND acknowledged = 0 
         AND timestamp > datetime('now', '-30 minutes')
@@ -92,7 +92,7 @@ export function evaluatePingAlerts(ping, vehicle, campaign, broadcastFn) {
         const alertId = 'alt_idle_' + Date.now();
         const message = `IDLE VIOLATION: Vehicle ${vehicle.plate_number} has been stationary for ${idleMins} mins outside approved break buffer.`;
 
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO alerts (id, vehicle_id, alert_type, severity, message) 
           VALUES (?, ?, 'EXCESSIVE_IDLE', 'WARNING', ?)
         `).run(alertId, vehicle.id, message);
