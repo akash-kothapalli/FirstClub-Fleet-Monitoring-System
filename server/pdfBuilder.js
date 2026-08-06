@@ -14,6 +14,19 @@ function getLogoBase64() {
   return '';
 }
 
+function formatISTTime(dateInput) {
+  if (!dateInput) return '-';
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+}
+
 export function generateDailyAuditReport(vehicleId, dateStr) {
   const vehicle = db.prepare(`
     SELECT v.*, u.full_name as driver_name, u.email as driver_email, ven.name as vendor_name 
@@ -63,8 +76,8 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
 
     return {
       ...b,
-      startTimeStr: start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      endTimeStr: b.end_time ? new Date(b.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Ongoing',
+      startTimeStr: formatISTTime(b.start_time),
+      endTimeStr: b.end_time ? formatISTTime(b.end_time) : 'Ongoing',
       duration
     };
   });
@@ -93,17 +106,23 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
         console.error('Failed to convert photo proof to Base64:', e);
       }
     }
-    return { ...p, photo_base64: base64Src };
+    return { ...p, photo_base64: base64Src, timeFormatted: formatISTTime(p.timestamp) };
   });
 
-  // Hourly Corridor Sampling (1 ping per hour + start/end + stops)
+  // 10-to-15 Minute Telemetry Corridor Sampling (plus break events & trip start/end)
   const sampledPings = [];
-  const hoursSeen = new Set();
+  let lastSampledTime = 0;
+  const SAMPLE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
   pings.forEach((p, idx) => {
-    const hourKey = new Date(p.timestamp).getHours();
-    if (idx === 0 || idx === pings.length - 1 || p.speed === 0 || p.is_break || !hoursSeen.has(hourKey)) {
+    const pingTime = new Date(p.timestamp).getTime();
+    const isFirstOrLast = (idx === 0 || idx === pings.length - 1);
+    const isBreakEvent = Boolean(p.is_break || p.break_type);
+    const isTimeIntervalReached = (pingTime - lastSampledTime >= SAMPLE_INTERVAL_MS);
+
+    if (isFirstOrLast || isBreakEvent || isTimeIntervalReached) {
       sampledPings.push(p);
-      hoursSeen.add(hourKey);
+      lastSampledTime = pingTime;
     }
   });
 
@@ -111,6 +130,7 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
   const targetDist = campaign.target_km_per_day || 90;
   const slaScore = targetDist > 0 ? Math.min(100, Math.round((totalDist / targetDist) * 100)) : 100;
   const logoBase64 = getLogoBase64();
+  const currentISTTime = formatISTTime(new Date());
 
   const reportPayload = {
     reportId: `REP-${vehicleId}-${dateStr || 'LATEST'}`,
@@ -211,7 +231,7 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     </div>
     <div style="text-align: right;">
       <div style="font-weight: 700; color: #ffffff;">Report Date: ${dateStr || 'Latest Shift'}</div>
-      <div style="font-size: 11px; color: #94a3b8;">Generated: ${new Date().toLocaleTimeString()}</div>
+      <div style="font-size: 11px; color: #94a3b8;">Generated: ${currentISTTime} IST</div>
     </div>
   </div>
 
@@ -222,7 +242,7 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     <div class="meta-item"><span class="meta-label">Vendor Partner</span><span class="meta-val">${vehicle.vendor_name || 'Akash Outdoor Media'}</span></div>
     <div class="meta-item"><span class="meta-label">Assigned Driver</span><span class="meta-val">${vehicle.driver_name || 'Unassigned Driver'}</span></div>
     <div class="meta-item"><span class="meta-label">Display Specs</span><span class="meta-val">${vehicle.display_size}</span></div>
-    <div class="meta-item"><span class="meta-label">Target City</span><span class="meta-val">${vehicle.current_city}</span></div>
+    <div class="meta-item"><span class="meta-label">Target City</span><span class="meta-val">${vehicle.current_city || 'Fetching location...'}</span></div>
     <div class="meta-item"><span class="meta-label">Target Km/Day</span><span class="meta-val">${targetDist} km</span></div>
   </div>
 
@@ -245,7 +265,7 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     </div>
   </div>
 
-  <!-- APPROVED BREAKS AUDIT & COMPLIANCE SUMMARY (POINT 8) -->
+  <!-- APPROVED BREAKS AUDIT & COMPLIANCE SUMMARY -->
   <div class="section-title">☕ Approved Driver Break Compliance Summary</div>
   
   <div class="break-summary-grid">
@@ -280,8 +300,8 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
       <thead>
         <tr>
           <th style="width: 25%;">Break Type</th>
-          <th style="width: 25%;">Start Time</th>
-          <th style="width: 25%;">End Time</th>
+          <th style="width: 25%;">Start Time (IST)</th>
+          <th style="width: 25%;">End Time (IST)</th>
           <th style="width: 25%;">Duration (Minutes)</th>
         </tr>
       </thead>
@@ -308,19 +328,19 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
       ${photoProofs.map(p => `
         <div class="proof-card">
           <img src="${p.photo_base64}" class="proof-img" alt="Proof Photo">
-          <div style="font-size: 10px; color: #4ade80; font-weight: 700; margin-top: 4px;">${new Date(p.timestamp).toLocaleTimeString()}</div>
+          <div style="font-size: 10px; color: #4ade80; font-weight: 700; margin-top: 4px;">${p.timeFormatted} IST</div>
           <div style="font-size: 10px; color: #cbd5e1;">${p.address || 'Uploaded Location'}</div>
         </div>
       `).join('')}
     </div>
   `}
 
-  <div class="section-title">📍 Telemetry & Approved Break Corridor Log (${sampledPings.length} Samples)</div>
+  <div class="section-title">📍 Telemetry & Approved Break Corridor Log (10-Min Intervals, ${sampledPings.length} Samples)</div>
   <table>
     <thead>
       <tr>
-        <th style="width: 16%;">Timestamp</th>
-        <th style="width: 34%;">Location Landmark</th>
+        <th style="width: 18%;">Timestamp (IST)</th>
+        <th style="width: 32%;">Location Landmark</th>
         <th style="width: 15%;">GPS Coords</th>
         <th style="width: 10%;">Speed</th>
         <th style="width: 12%;">Status</th>
@@ -330,7 +350,7 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     <tbody>
       ${sampledPings.map(p => `
         <tr>
-          <td>${new Date(p.timestamp).toLocaleTimeString()}</td>
+          <td>${formatISTTime(p.timestamp)}</td>
           <td>${p.address || 'Corridor Route'}</td>
           <td>${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</td>
           <td>${p.speed} km/h</td>

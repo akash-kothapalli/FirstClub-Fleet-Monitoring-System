@@ -15,7 +15,7 @@ export function DriverApp() {
   const [isRealGPSActive, setIsRealGPSActive] = useState(false);
   const [simSpeed, setSimSpeed] = useState(28.5);
   const [activeBreak, setActiveBreak] = useState(null);
-  const [currentAddress, setCurrentAddress] = useState('Detecting Live Location...');
+  const [currentAddress, setCurrentAddress] = useState('Fetching location...');
   const [gpsAccuracy, setGpsAccuracy] = useState(8);
 
   // Driver Profile State dynamically initialized from authenticated user
@@ -45,13 +45,17 @@ export function DriverApp() {
         setIsDutyActive(myVehicle.is_duty_active !== 0);
       }
 
-      if (myVehicle.current_area || myVehicle.current_city) {
-        const area = myVehicle.current_area || 'Bellandur & Sarjapur Tech Corridor';
-        const city = myVehicle.current_city || 'Bengaluru';
-        setCurrentAddress(`${area}, ${city}`);
+      if (myVehicle.current_area && myVehicle.current_area !== 'Bellandur & Sarjapur Tech Corridor') {
+        const area = myVehicle.current_area;
+        const city = myVehicle.current_city ? `, ${myVehicle.current_city}` : '';
+        setCurrentAddress(`${area}${city}`);
+      } else if (myVehicle.current_lat && myVehicle.current_lng) {
+        setCurrentAddress(`GPS Location (${myVehicle.current_lat.toFixed(4)}°, ${myVehicle.current_lng.toFixed(4)}°)`);
+      } else {
+        setCurrentAddress('Fetching location...');
       }
     }
-  }, [myVehicle?.active_break_type, myVehicle?.is_real_gps_active, myVehicle?.is_duty_active, myVehicle?.current_area, myVehicle?.current_city]);
+  }, [myVehicle?.active_break_type, myVehicle?.is_real_gps_active, myVehicle?.is_duty_active, myVehicle?.current_area, myVehicle?.current_city, myVehicle?.current_lat, myVehicle?.current_lng]);
 
   useEffect(() => {
     if (user) {
