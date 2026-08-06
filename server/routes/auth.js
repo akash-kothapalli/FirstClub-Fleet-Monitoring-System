@@ -46,7 +46,7 @@ router.post('/register', async (req, res) => {
   // Ensure default vendor 'v1' exists in database to prevent Foreign Key constraint errors
   await db.prepare(`
     INSERT OR IGNORE INTO vendors (id, name, contact_email, phone)
-    VALUES ('v1', 'Akash Outdoor Media', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111')
+    VALUES ('v1', 'Envision Advertising', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111')
   `).run();
 
   const userId = `u_drv_${Date.now()}`;

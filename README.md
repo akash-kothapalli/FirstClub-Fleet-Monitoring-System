@@ -19,7 +19,7 @@ FirstClub FFMS tracks digital out-of-home (DOOH) LED campaign trucks operating a
 - **2D Geographic City Detection**: Genuine 2D bounding-box spatial coordinate matching for Bengaluru, Mumbai, Delhi, and Hyderabad with `'Unknown City'` fallback handling.
 - **Strict Role Isolation**:
   - **Super Admin / Ops Manager (`ops_manager`)**: Full nationwide fleet visibility, vehicle CRUD, SLA breach monitoring, and PDF report generation.
-  - **Vendor Manager (`vendor_manager`)**: Scoped exclusively to assigned vendor fleet (`v1` Akash Outdoor Media). Cannot access or tamper with other vendors' vehicles or alerts.
+  - **Vendor Manager (`vendor_manager`)**: Scoped exclusively to assigned vendor fleet (`v1` Envision Advertising). Cannot access or tamper with other vendors' vehicles or alerts.
   - **Driver (`driver`)**: Scoped strictly to assigned vehicle telemetry, Start/End Shift duty toggle, hardware GPS mode, approved break controls, driver profile registration, and multi-photo proof uploads.
 - **State Persistence**: SQLite database persistence across page reloads for driver shift duty status, active break selection (Lunch, Tea, Service), and hardware GPS toggle mode.
 - **Real-Time Server-Sent Events (SSE)**: Low-latency SSE streaming (`/api/events`) for instant broadcast of vehicle movements, status updates, and critical alerts.
@@ -156,7 +156,7 @@ npm run server
 | :--- | :--- | :--- | :--- | :--- |
 | **Ops Manager 1** | Akash | `akash.kothapalli@firstclub.co.in` | `password123` | Full Nationwide Operations |
 | **Ops Manager 2** | Bapu Kale | `bapu.kale@firstclub.co.in` | `password123` | Full Nationwide Operations |
-| **Vendor Manager** | Akash | `vendor.akash@firstclub.co.in` | `password123` | Scoped to Akash Outdoor Media (`v1`) |
+| **Vendor Manager** | Akash | `vendor.akash@firstclub.co.in` | `password123` | Scoped to Envision Advertising (`v1`) |
 
 ---
 

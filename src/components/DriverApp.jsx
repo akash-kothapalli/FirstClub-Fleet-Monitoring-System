@@ -45,9 +45,9 @@ export function DriverApp() {
         setIsDutyActive(myVehicle.is_duty_active !== 0);
       }
 
-      if (myVehicle.current_area && myVehicle.current_area !== 'Bellandur & Sarjapur Tech Corridor') {
+      if (myVehicle.current_area && myVehicle.current_area !== 'Bellandur & Sarjapur Tech Corridor' && myVehicle.current_area !== 'Fetching location...') {
         const area = myVehicle.current_area;
-        const city = myVehicle.current_city ? `, ${myVehicle.current_city}` : '';
+        const city = myVehicle.current_city && myVehicle.current_city !== 'Fetching location...' ? `, ${myVehicle.current_city}` : '';
         setCurrentAddress(`${area}${city}`);
       } else if (myVehicle.current_lat && myVehicle.current_lng) {
         setCurrentAddress(`GPS Location (${myVehicle.current_lat.toFixed(4)}°, ${myVehicle.current_lng.toFixed(4)}°)`);
@@ -138,11 +138,28 @@ export function DriverApp() {
     fetchVehicles();
   }
 
+  // Get current device coordinates dynamically without hardcoded city fallbacks
+  function getCurrentCoords() {
+    return new Promise((resolve) => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => resolve({ lat: myVehicle?.current_lat || null, lng: myVehicle?.current_lng || null }),
+          { timeout: 5000, enableHighAccuracy: true }
+        );
+      } else {
+        resolve({ lat: myVehicle?.current_lat || null, lng: myVehicle?.current_lng || null });
+      }
+    });
+  }
+
   async function toggleBreak(type) {
     if (!myVehicle) return;
     const isStarting = activeBreak !== type;
     const nextBreak = isStarting ? type : null;
     setActiveBreak(nextBreak);
+
+    const coords = await getCurrentCoords();
 
     await apiFetch('/api/telemetry/breaks/toggle', {
       method: 'POST',
@@ -150,15 +167,15 @@ export function DriverApp() {
         vehicle_id: myVehicle.id,
         break_type: type,
         is_starting: isStarting,
-        lat: myVehicle.current_lat || 12.9220,
-        lng: myVehicle.current_lng || 77.6764
+        lat: coords.lat,
+        lng: coords.lng
       })
     });
 
     fetchVehicles();
   }
 
-  // Enhanced Multi-Photo Proof Upload (Gallery + Camera support)
+  // Enhanced Multi-Photo Proof Upload with Dynamic Device GPS Location
   async function handlePhotoUpload(e) {
     if (!myVehicle) return;
     const files = Array.from(e.target.files || []);
@@ -179,6 +196,7 @@ export function DriverApp() {
     setUploading(true);
     setUploadSuccessMsg('');
 
+    const coords = await getCurrentCoords();
     let uploadedCount = 0;
 
     for (let file of files) {
@@ -191,8 +209,8 @@ export function DriverApp() {
               body: JSON.stringify({
                 vehicle_id: myVehicle.id,
                 photo_base64: reader.result,
-                lat: myVehicle.current_lat || 12.9220,
-                lng: myVehicle.current_lng || 77.6764
+                lat: coords.lat,
+                lng: coords.lng
               })
             });
 
@@ -219,13 +237,24 @@ export function DriverApp() {
     return (
       <div className="driver-app-container" style={{ padding: '24px' }}>
         <div style={{
-          background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', color: '#f87171',
-          padding: '20px', borderRadius: '12px', textAlign: 'center', lineHeight: '1.6'
+          background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #38bdf8', color: '#f8fafc',
+          padding: '24px', borderRadius: '14px', textAlign: 'center', lineHeight: '1.6'
         }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '8px' }}>⚠️ Unassigned Driver Account</h2>
-          <p style={{ fontSize: '13px', margin: 0 }}>
-            No vehicle is currently assigned to your driver account (<strong>{user?.full_name || user?.fullName || user?.email}</strong>).<br />
-            Please contact your FirstClub Ops Manager to assign a vehicle to your profile in Admin CRUD.
+          <div style={{ fontSize: '32px', marginBottom: '8px' }}>✅ 🚚</div>
+          <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#38bdf8', marginBottom: '8px' }}>
+            Driver Account Active & Persisted in Turso Cloud
+          </h2>
+          <p style={{ fontSize: '13px', color: '#cbd5e1', marginBottom: '16px' }}>
+            Driver Profile <strong>{user?.full_name || user?.fullName || user?.email}</strong> is saved in database.<br />
+            Status: <strong style={{ color: '#f59e0b' }}>Pending Vehicle Assignment by Ops Manager</strong>
+          </p>
+          <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '12px', textAlign: 'left', fontSize: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div>📧 Email / Account ID: <strong style={{ color: 'white' }}>{user?.email}</strong></div>
+            <div>📱 Mobile Phone: <strong style={{ color: 'white' }}>{user?.phone || 'Not provided'}</strong></div>
+            <div>📍 Target City: <strong style={{ color: 'white' }}>{user?.target_city || 'Bengaluru'}</strong></div>
+          </div>
+          <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '14px', margin: 0 }}>
+            Once your FirstClub Ops Manager assigns an LED truck to your profile in Admin CRUD, your Shift Duty & Telemetry controls will activate automatically.
           </p>
         </div>
       </div>

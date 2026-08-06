@@ -21,7 +21,7 @@ function flattenArgs(args) {
 let db;
 
 if (tursoUrl && tursoToken) {
-  console.log(`[DATABASE] ☁️ Connected to Turso Cloud SQLite: ${tursoUrl}`);
+  console.log(`[DATABASE] ☁️ Connected to Turso Cloud SQLite via environment variables: ${tursoUrl}`);
   const client = createClient({ url: tursoUrl, authToken: tursoToken });
 
   db = {
@@ -278,10 +278,15 @@ function hashPassword(password) {
 async function seedEssentialManagerAccountsOnly() {
   const defaultPass = hashPassword('password123');
 
-  // Ensure default partner vendor v1 exists so driver self-registration never fails Foreign Key checks
+  // Ensure default partner vendor v1 exists as Envision Advertising
   await db.prepare(`
     INSERT OR IGNORE INTO vendors (id, name, contact_email, phone) VALUES (?, ?, ?, ?)
-  `).run('v1', 'Akash Outdoor Media', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111');
+  `).run('v1', 'Envision Advertising', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111');
+
+  // Update vendor name if v1 already exists in database
+  await db.prepare(`
+    UPDATE vendors SET name = 'Envision Advertising' WHERE id = 'v1'
+  `).run();
 
   // Ensure default campaign c1 exists
   await db.prepare(`

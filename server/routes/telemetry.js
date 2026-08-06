@@ -129,6 +129,15 @@ router.post('/photo-proof', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'vehicle_id and photo_base64 are required' });
   }
 
+  const vehicle = await db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
+
+  const targetLat = lat || (vehicle ? vehicle.current_lat : null);
+  const targetLng = lng || (vehicle ? vehicle.current_lng : null);
+
+  if (!targetLat || !targetLng) {
+    return res.status(400).json({ error: 'GPS coordinates unavailable for photo proof. Please enable Location Services on device.' });
+  }
+
   const base64Data = photo_base64.replace(/^data:image\/\w+;base64,/, '');
   const buffer = Buffer.from(base64Data, 'base64');
   if (buffer.length > 5 * 1024 * 1024) {
@@ -140,13 +149,13 @@ router.post('/photo-proof', authMiddleware, async (req, res) => {
   fs.writeFileSync(filePath, buffer);
 
   const photoUrl = `/uploads/proofs/${filename}`;
-  const address = await reverseGeocodeWithCache(lat || 18.9438, lng || 72.8232);
+  const address = await reverseGeocodeWithCache(targetLat, targetLng);
   const proofId = `prf_${Date.now()}`;
 
   await db.prepare(`
     INSERT INTO campaign_photo_proofs (id, vehicle_id, driver_id, photo_url, lat, lng, address)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(proofId, vehicle_id, req.user.userId, photoUrl, lat || 18.9438, lng || 72.8232, address);
+  `).run(proofId, vehicle_id, req.user.userId, photoUrl, targetLat, targetLng, address);
 
   const newProof = await db.prepare('SELECT * FROM campaign_photo_proofs WHERE id = ?').get(proofId);
 
@@ -171,9 +180,9 @@ router.post('/breaks/toggle', authMiddleware, async (req, res) => {
     WHERE id = ?
   `).run(newStatus, newBreakType, vehicle_id);
 
-  const currentLat = lat || vehicle.current_lat || 12.9220;
-  const currentLng = lng || vehicle.current_lng || 77.6764;
-  const address = await reverseGeocodeWithCache(currentLat, currentLng);
+  const currentLat = lat || vehicle.current_lat;
+  const currentLng = lng || vehicle.current_lng;
+  const address = (currentLat && currentLng) ? await reverseGeocodeWithCache(currentLat, currentLng) : 'Approved Break Buffer';
   const driverId = req.user.userId || vehicle.assigned_driver_id || 'u_d1';
 
   // Record approved break start / end in approved_breaks table for PDF audit reporting
@@ -200,7 +209,7 @@ router.post('/breaks/toggle', authMiddleware, async (req, res) => {
     await db.prepare(`
       INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, break_type, visibility_state)
       VALUES (?, 'c1', ?, ?, 0, 0, ?, ?, ?, 'foreground')
-    `).run(vehicle_id, currentLat, currentLng, `${is_starting ? 'Approved Break Start' : 'Approved Break End'} (${address})`, is_starting ? 1 : 0, break_type);
+    `).run(vehicle_id, currentLat || 0, currentLng || 0, `${is_starting ? 'Approved Break Start' : 'Approved Break End'} (${address})`, is_starting ? 1 : 0, break_type);
   } catch (err) {
     console.error('Failed to insert telemetry ping for break:', err.message);
   }

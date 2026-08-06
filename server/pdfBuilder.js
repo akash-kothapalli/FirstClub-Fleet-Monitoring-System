@@ -109,10 +109,10 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     return { ...p, photo_base64: base64Src, timeFormatted: formatISTTime(p.timestamp) };
   });
 
-  // 10-to-15 Minute Telemetry Corridor Sampling (plus break events & trip start/end)
+  // Strict 10-Minute Telemetry Corridor Log Sampling (09:00, 09:10, 09:20...) plus break events
   const sampledPings = [];
   let lastSampledTime = 0;
-  const SAMPLE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+  const SAMPLE_INTERVAL_MS = 10 * 60 * 1000; // Strictly 10 minutes
 
   pings.forEach((p, idx) => {
     const pingTime = new Date(p.timestamp).getTime();
@@ -131,12 +131,13 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
   const slaScore = targetDist > 0 ? Math.min(100, Math.round((totalDist / targetDist) * 100)) : 100;
   const logoBase64 = getLogoBase64();
   const currentISTTime = formatISTTime(new Date());
+  const vendorDisplayName = vehicle.vendor_name || 'Envision Advertising';
 
   const reportPayload = {
     reportId: `REP-${vehicleId}-${dateStr || 'LATEST'}`,
     vehicleId,
     plateNumber: vehicle.plate_number,
-    vendorName: vehicle.vendor_name || 'Akash Outdoor Media',
+    vendorName: vendorDisplayName,
     driverName: vehicle.driver_name || 'Unassigned Driver',
     campaignName: campaign.name,
     totalDistanceKm: totalDist,
@@ -239,7 +240,7 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     <div class="meta-item"><span class="meta-label">Campaign</span><span class="meta-val">${campaign.name}</span></div>
     <div class="meta-item"><span class="meta-label">Client</span><span class="meta-val">${campaign.client}</span></div>
     <div class="meta-item"><span class="meta-label">Vehicle Plate</span><span class="meta-val">${vehicle.plate_number}</span></div>
-    <div class="meta-item"><span class="meta-label">Vendor Partner</span><span class="meta-val">${vehicle.vendor_name || 'Akash Outdoor Media'}</span></div>
+    <div class="meta-item"><span class="meta-label">Vendor Partner</span><span class="meta-val">${vendorDisplayName}</span></div>
     <div class="meta-item"><span class="meta-label">Assigned Driver</span><span class="meta-val">${vehicle.driver_name || 'Unassigned Driver'}</span></div>
     <div class="meta-item"><span class="meta-label">Display Specs</span><span class="meta-val">${vehicle.display_size}</span></div>
     <div class="meta-item"><span class="meta-label">Target City</span><span class="meta-val">${vehicle.current_city || 'Fetching location...'}</span></div>
