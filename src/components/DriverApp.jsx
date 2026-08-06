@@ -142,7 +142,13 @@ export function DriverApp() {
 
     await apiFetch('/api/telemetry/breaks/toggle', {
       method: 'POST',
-      body: JSON.stringify({ vehicle_id: myVehicle.id, break_type: type, is_starting: isStarting })
+      body: JSON.stringify({
+        vehicle_id: myVehicle.id,
+        break_type: type,
+        is_starting: isStarting,
+        lat: myVehicle.current_lat || 12.9220,
+        lng: myVehicle.current_lng || 77.6764
+      })
     });
 
     fetchVehicles();

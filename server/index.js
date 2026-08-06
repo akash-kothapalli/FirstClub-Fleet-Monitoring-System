@@ -11,6 +11,7 @@ import telemetryRoutes from './routes/telemetry.js';
 import campaignRoutes from './routes/campaigns.js';
 import reportRoutes from './routes/reports.js';
 import { verifyToken } from './middleware/auth.js';
+import { sseClients } from './sse.js';
 
 initDatabase();
 
@@ -40,8 +41,6 @@ app.use('/api/campaigns', campaignRoutes);
 app.use('/api/reports', reportRoutes);
 
 // Real-Time Server-Sent Events (SSE) Stream
-const sseClients = new Set();
-
 app.get('/api/events', (req, res) => {
   let token = req.cookies?.fleet_token || req.query.token;
   const user = verifyToken(token);

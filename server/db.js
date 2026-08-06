@@ -1,7 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
-import crypto from 'node:crypto';
 
 const dataDir = path.join(process.cwd(), 'data');
 const uploadsDir = path.join(process.cwd(), 'uploads', 'proofs');
@@ -139,13 +138,21 @@ export function initDatabase() {
       heading REAL DEFAULT 0,
       address TEXT,
       is_break INTEGER DEFAULT 0,
+      break_type TEXT,
       visibility_state TEXT DEFAULT 'foreground',
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_pings_vehicle_time ON telemetry_pings(vehicle_id, timestamp);
+  `);
 
+  // Safe migration for telemetry_pings
+  try {
+    db.exec(`ALTER TABLE telemetry_pings ADD COLUMN break_type TEXT;`);
+  } catch (e) {}
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS campaign_photo_proofs (
       id TEXT PRIMARY KEY,
       vehicle_id TEXT NOT NULL,
@@ -171,14 +178,32 @@ export function initDatabase() {
       id TEXT PRIMARY KEY,
       vehicle_id TEXT NOT NULL,
       driver_id TEXT NOT NULL,
-      break_type TEXT CHECK(break_type IN ('Lunch', 'Tea', 'Emergency', 'Custom')),
+      break_type TEXT NOT NULL,
       start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
       end_time DATETIME,
       status TEXT DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE', 'COMPLETED')),
+      lat REAL,
+      lng REAL,
+      address TEXT,
       FOREIGN KEY(vehicle_id) REFERENCES vehicles(id),
       FOREIGN KEY(driver_id) REFERENCES users(id)
     );
+  `);
 
+  // Safe migrations for approved_breaks
+  const breakColumns = [
+    { name: 'lat', type: 'REAL' },
+    { name: 'lng', type: 'REAL' },
+    { name: 'address', type: 'TEXT' }
+  ];
+
+  breakColumns.forEach(col => {
+    try {
+      db.exec(`ALTER TABLE approved_breaks ADD COLUMN ${col.name} ${col.type};`);
+    } catch (e) {}
+  });
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS alerts (
       id TEXT PRIMARY KEY,
       vehicle_id TEXT NOT NULL,
@@ -192,60 +217,6 @@ export function initDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_alerts_vehicle_time ON alerts(vehicle_id, timestamp);
   `);
-
-  cleanupDemoAccountsAndSeedProduction();
-}
-
-function hashPassword(password) {
-  return crypto.createHash('sha256').update(password + 'firstclub_salt_2026').digest('hex');
-}
-
-function cleanupDemoAccountsAndSeedProduction() {
-  const defaultPass = hashPassword('password123');
-
-  // Purge legacy test emails from early dev iterations
-  db.exec(`
-    DELETE FROM users WHERE email IN (
-      'manager@firstclub.com', 'vendor1@apexmedia.in', 'vendor2@cityvibe.in',
-      'driver.sunil@apexmedia.in', 'driver.raju@apexmedia.in', 'driver.anil@cityvibe.in',
-      'sunil@apexmedia.in', 'sunil@firstclub.co.in', 'mahesh@gmail.com'
-    );
-  `);
-
-  // Ensure production vendor Akash Outdoor Media exists
-  db.prepare(`
-    INSERT OR REPLACE INTO vendors (id, name, contact_email, phone) VALUES (?, ?, ?, ?)
-  `).run('v1', 'Akash Outdoor Media', 'akash.kothapalli@firstclub.co.in', '+91 98000 11111');
-
-  // 1. Ops Manager: Akash
-  db.prepare(`
-    INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role, full_name = excluded.full_name
-  `).run('u_ops1', 'akash.kothapalli@firstclub.co.in', defaultPass, 'ops_manager', null, 'Akash', '+91 98000 11111', '', 'Bengaluru', 'Bellandur, Sarjapur, Indiranagar');
-
-  // 2. Ops Manager: Bapu
-  db.prepare(`
-    INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role, full_name = excluded.full_name
-  `).run('u_ops2', 'bapu.kale@firstclub.co.in', defaultPass, 'ops_manager', null, 'Bapu', '+91 98000 22222', '', 'Mumbai', 'Marine Drive, BKC, Worli');
-
-  // 3. Driver: Mangesh
-  db.prepare(`
-    INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role, full_name = excluded.full_name
-  `).run('u_d_mangesh', 'mangesh@firstclub.co.in', defaultPass, 'driver', 'v1', 'Mangesh', '+91 98765 11111', '', 'Bengaluru', 'Bellandur, Sarjapur');
-
-  // 4. Vendor Manager: Akash
-  db.prepare(`
-    INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, role = excluded.role, vendor_id = excluded.vendor_id, full_name = excluded.full_name
-  `).run('u_vm1', 'vendor.akash@firstclub.co.in', defaultPass, 'vendor_manager', 'v1', 'Akash (Vendor Manager)', '+91 98000 11111', '', 'Bengaluru', 'Bengaluru Corridors');
-
-  console.log('[DB] Production accounts configured (Akash, Bapu, Mangesh). Demo accounts cleaned.');
 }
 
 initDatabase();

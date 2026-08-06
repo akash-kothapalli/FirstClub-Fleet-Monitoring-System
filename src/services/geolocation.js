@@ -1,6 +1,7 @@
 let watchId = null;
 let wakeLock = null;
 let dbOffline = null;
+let isHighAccuracyEnabled = true;
 
 // Initialize IndexedDB Offline Queue
 function initIndexedDB() {
@@ -20,7 +21,7 @@ function initIndexedDB() {
   });
 }
 
-// Request Screen Wake Lock
+// Request Screen Wake Lock with background re-engagement
 export async function requestWakeLock() {
   if ('wakeLock' in navigator) {
     try {
@@ -30,6 +31,15 @@ export async function requestWakeLock() {
       console.warn('[GPS SERVICE] Screen Wake Lock failed:', err.message);
     }
   }
+}
+
+// Re-engage WakeLock when tab becomes visible again
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && watchId !== null) {
+      requestWakeLock();
+    }
+  });
 }
 
 export function releaseWakeLock() {
@@ -78,12 +88,14 @@ export async function flushOfflineQueue(vehicleId) {
 }
 
 // Auto-sync offline pings when browser comes online
-window.addEventListener('online', () => {
-  console.log('[GPS SERVICE] Cellular network restored. Flushing offline ping queue...');
-  flushOfflineQueue('veh_1');
-});
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('[GPS SERVICE] Cellular network restored. Flushing offline ping queue...');
+    flushOfflineQueue('veh_1');
+  });
+}
 
-// Real Device HTML5 GPS Watcher
+// Real Device HTML5 GPS Watcher with Automatic Timeout Fallback
 export function startHTML5Tracking(vehicleId, onLocationReceived, onError) {
   if (!navigator.geolocation) {
     if (onError) onError('HTML5 Geolocation is not supported by your browser');
@@ -91,6 +103,13 @@ export function startHTML5Tracking(vehicleId, onLocationReceived, onError) {
   }
 
   requestWakeLock();
+  if (watchId !== null) stopHTML5Tracking();
+
+  const options = {
+    enableHighAccuracy: isHighAccuracyEnabled,
+    maximumAge: 5000,
+    timeout: 30000 // 30-second timeout to prevent false positive GPS timeout errors
+  };
 
   watchId = navigator.geolocation.watchPosition(
     async (position) => {
@@ -105,7 +124,7 @@ export function startHTML5Tracking(vehicleId, onLocationReceived, onError) {
         lng,
         speed,
         heading,
-        address: `Live Device GPS (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+        address: `Live Device GPS (${lat.toFixed(4)}°, ${lng.toFixed(4)}°)`,
         is_break: 0,
         visibility_state: document.visibilityState
       };
@@ -134,14 +153,20 @@ export function startHTML5Tracking(vehicleId, onLocationReceived, onError) {
       if (onLocationReceived) onLocationReceived(pingPayload);
     },
     (err) => {
-      console.error('[GPS SERVICE] Position error:', err.message);
-      if (onError) onError(err.message);
+      console.warn('[GPS SERVICE] Position error:', err.message, 'Code:', err.code);
+
+      // Handle GPS Timeout (Code 3): Fallback from High Accuracy to Standard Network/Cellular GPS
+      if (err.code === 3 && isHighAccuracyEnabled) {
+        console.warn('[GPS SERVICE] High accuracy GPS timed out. Falling back to standard positioning mode...');
+        isHighAccuracyEnabled = false;
+        stopHTML5Tracking();
+        startHTML5Tracking(vehicleId, onLocationReceived, onError);
+        return;
+      }
+
+      if (onError && err.code !== 3) onError(err.message);
     },
-    {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 15000
-    }
+    options
   );
 }
 

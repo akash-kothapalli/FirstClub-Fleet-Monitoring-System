@@ -5,12 +5,13 @@ import db from '../db.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { livePingLimiter, batchPingLimiter } from '../middleware/rateLimiter.js';
 import { evaluatePingAlerts } from '../alerts.js';
-import { reverseGeocodeWithCache, getLocalLandmarkAddress } from '../utils/geofenceCheck.js';
+import { reverseGeocodeWithCache } from '../utils/geofenceCheck.js';
+import { broadcastSSE } from '../sse.js';
 
 const router = Router();
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads', 'proofs');
 
-// Genuine 2D Geographic City Bounding Boxes (Lat AND Lng)
+// 2D Geographic City Bounding Boxes
 const CITY_ZONES = [
   { name: 'Bengaluru', latMin: 12.7, latMax: 13.2, lngMin: 77.3, lngMax: 77.9 },
   { name: 'Delhi',     latMin: 28.3, latMax: 28.9, lngMin: 76.8, lngMax: 77.5 },
@@ -22,12 +23,12 @@ function resolveCityFromCoords(lat, lng) {
   const match = CITY_ZONES.find(
     z => lat >= z.latMin && lat <= z.latMax && lng >= z.lngMin && lng <= z.lngMax
   );
-  return match ? match.name : 'Unknown City';
+  return match ? match.name : 'Out-of-Station Route';
 }
 
-// 1. Live Telemetry Ping with Genuine 2D City Detection & Zero Hardcoded City Fallbacks
-router.post('/ping', authMiddleware, livePingLimiter, (req, res) => {
-  const { vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, visibility_state } = req.body;
+// 1. Live Telemetry Ping with Dynamic Reverse Geocoding & Real-Time SSE Broadcast
+router.post('/ping', authMiddleware, livePingLimiter, async (req, res) => {
+  const { vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, break_type, visibility_state } = req.body;
   if (!vehicle_id || lat === undefined || lng === undefined) {
     return res.status(400).json({ error: 'vehicle_id, lat, lng required' });
   }
@@ -47,12 +48,15 @@ router.post('/ping', authMiddleware, livePingLimiter, (req, res) => {
   `).get(vehicle_id) || db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campaign_id || 'c1');
 
   const currentSpeed = speed || 0;
+  const currentBreakType = is_break ? (break_type || vehicle.active_break_type) : vehicle.active_break_type;
+  const isBreakActive = (is_break || vehicle.active_break_type) ? 1 : 0;
+
   let newStatus = 'Moving';
-  if (is_break || vehicle.active_break_type) newStatus = 'On Approved Break';
+  if (isBreakActive) newStatus = 'On Approved Break';
   else if (currentSpeed === 0) newStatus = 'Idle';
 
-  // Area & Genuine 2D Geographic City Detection (Lat AND Lng matching)
-  const currentArea = getLocalLandmarkAddress(lat, lng);
+  // Dynamic Reverse Geocoding without hardcoded city fallbacks
+  const currentArea = await reverseGeocodeWithCache(lat, lng);
   const currentCity = resolveCityFromCoords(lat, lng);
 
   let distIncrement = 0;
@@ -72,7 +76,6 @@ router.post('/ping', authMiddleware, livePingLimiter, (req, res) => {
   const newIdleTime = vehicle.idle_time_mins + (currentSpeed === 0 && !is_break ? 0.5 : 0);
   const newBreakTime = vehicle.break_time_mins + (is_break ? 0.5 : 0);
 
-  // SQL Update includes current_city = ?
   db.prepare(`
     UPDATE vehicles 
     SET current_lat = ?, current_lng = ?, current_speed = ?, heading = ?, status = ?,
@@ -82,17 +85,20 @@ router.post('/ping', authMiddleware, livePingLimiter, (req, res) => {
   `).run(lat, lng, currentSpeed, heading || 0, newStatus, currentArea, currentCity, newTotalDist, newRunningTime, newIdleTime, newBreakTime, vehicle_id);
 
   db.prepare(`
-    INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, visibility_state)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(vehicle_id, campaign ? campaign.id : null, lat, lng, currentSpeed, heading || 0, currentArea, is_break ? 1 : 0, visibility_state || 'foreground');
+    INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, break_type, visibility_state)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(vehicle_id, campaign ? campaign.id : null, lat, lng, currentSpeed, heading || 0, currentArea, isBreakActive, currentBreakType || null, visibility_state || 'foreground');
 
   const pingObj = {
     vehicle_id, lat, lng, speed: currentSpeed, heading: heading || 0,
-    address: currentArea, current_area: currentArea, current_city: currentCity, is_break: is_break ? 1 : 0, status: newStatus,
+    address: currentArea, current_area: currentArea, current_city: currentCity, is_break: isBreakActive, break_type: currentBreakType, status: newStatus,
     today_distance_km: newTotalDist, timestamp: new Date().toISOString()
   };
 
   evaluatePingAlerts(pingObj, { ...vehicle, today_distance_km: newTotalDist, idle_time_mins: newIdleTime }, campaign);
+
+  // Broadcast real-time SSE telemetry ping to Manager Dashboard
+  broadcastSSE('telemetry_ping', pingObj);
 
   return res.json({ success: true, status: newStatus, current_area: currentArea, current_city: currentCity, today_distance_km: newTotalDist });
 });
@@ -103,20 +109,22 @@ router.post('/batch', authMiddleware, batchPingLimiter, (req, res) => {
   if (!vehicle_id || !Array.isArray(pings)) return res.status(400).json({ error: 'vehicle_id and pings array required' });
 
   const insertStmt = db.prepare(`
-    INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, visibility_state, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, break_type, visibility_state, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   let count = 0;
   pings.slice(0, 100).forEach(p => {
-    insertStmt.run(vehicle_id, p.campaign_id || 'c1', p.lat, p.lng, p.speed || 0, p.heading || 0, p.address || 'Offline Queued Location', p.is_break ? 1 : 0, p.visibility_state || 'foreground', p.timestamp || new Date().toISOString());
+    insertStmt.run(vehicle_id, p.campaign_id || 'c1', p.lat, p.lng, p.speed || 0, p.heading || 0, p.address || 'Offline Queued Location', p.is_break ? 1 : 0, p.break_type || null, p.visibility_state || 'foreground', p.timestamp || new Date().toISOString());
     count++;
   });
+
+  broadcastSSE('vehicle_updated', { vehicle_id });
 
   return res.json({ success: true, processedCount: count });
 });
 
-// 3. Driver 40-Minute Photo Proof Upload Endpoint
+// 3. Driver 40-Minute Photo Proof Upload Endpoint with Real-Time SSE
 router.post('/photo-proof', authMiddleware, async (req, res) => {
   const { vehicle_id, photo_base64, lat, lng } = req.body;
   if (!vehicle_id || !photo_base64) {
@@ -143,12 +151,16 @@ router.post('/photo-proof', authMiddleware, async (req, res) => {
   `).run(proofId, vehicle_id, req.user.userId, photoUrl, lat || 18.9438, lng || 72.8232, address);
 
   const newProof = db.prepare('SELECT * FROM campaign_photo_proofs WHERE id = ?').get(proofId);
+
+  // Real-time broadcast to Manager Dashboard
+  broadcastSSE('photo_proof_uploaded', { vehicle_id, proof: newProof });
+
   return res.json({ success: true, proof: newProof, message: 'Photo proof uploaded successfully' });
 });
 
-// 4. Approved Breaks Toggle Endpoint
-router.post('/breaks/toggle', authMiddleware, (req, res) => {
-  const { vehicle_id, break_type, is_starting } = req.body;
+// 4. Approved Breaks Toggle Endpoint with Audit Logging & Real-Time SSE
+router.post('/breaks/toggle', authMiddleware, async (req, res) => {
+  const { vehicle_id, break_type, is_starting, lat, lng } = req.body;
   const vehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
   if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
 
@@ -160,6 +172,43 @@ router.post('/breaks/toggle', authMiddleware, (req, res) => {
     SET status = ?, active_break_type = ? 
     WHERE id = ?
   `).run(newStatus, newBreakType, vehicle_id);
+
+  const currentLat = lat || vehicle.current_lat || 12.9220;
+  const currentLng = lng || vehicle.current_lng || 77.6764;
+  const address = await reverseGeocodeWithCache(currentLat, currentLng);
+  const driverId = req.user.userId || vehicle.assigned_driver_id || 'u_d1';
+
+  // Record approved break start / end in approved_breaks table for PDF audit reporting
+  try {
+    if (is_starting) {
+      const breakId = `brk_${Date.now()}`;
+      db.prepare(`
+        INSERT INTO approved_breaks (id, vehicle_id, driver_id, break_type, start_time, status, lat, lng, address)
+        VALUES (?, ?, ?, ?, datetime('now'), 'ACTIVE', ?, ?, ?)
+      `).run(breakId, vehicle_id, driverId, break_type, currentLat, currentLng, address);
+    } else {
+      db.prepare(`
+        UPDATE approved_breaks
+        SET end_time = datetime('now'), status = 'COMPLETED'
+        WHERE vehicle_id = ? AND status = 'ACTIVE'
+      `).run(vehicle_id);
+    }
+  } catch (err) {
+    console.error('Failed to log approved break record:', err.message);
+  }
+
+  // Insert explicit telemetry ping for break event log in telemetry_pings
+  try {
+    db.prepare(`
+      INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, break_type, visibility_state)
+      VALUES (?, 'c1', ?, ?, 0, 0, ?, ?, ?, 'foreground')
+    `).run(vehicle_id, currentLat, currentLng, `${is_starting ? 'Approved Break Start' : 'Approved Break End'} (${address})`, is_starting ? 1 : 0, break_type);
+  } catch (err) {
+    console.error('Failed to insert telemetry ping for break:', err.message);
+  }
+
+  // Broadcast break change to Manager Dashboard
+  broadcastSSE('break_status_changed', { vehicle_id, break_type: newBreakType, is_starting, status: newStatus });
 
   return res.json({ success: true, status: newStatus, active_break_type: newBreakType });
 });

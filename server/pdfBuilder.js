@@ -34,24 +34,47 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
 
   const pings = db.prepare(`
     SELECT * FROM telemetry_pings 
-    WHERE vehicle_id = ? AND date(timestamp) = date(?) 
+    WHERE vehicle_id = ?
     ORDER BY timestamp ASC
-  `).all(vehicleId, dateStr);
+  `).all(vehicleId);
 
-  // Fetch photo proofs for this vehicle (with fallback to latest 6 if no date match)
+  // Fetch approved breaks for this vehicle permanently from approved_breaks table
+  let rawBreaks = db.prepare(`
+    SELECT * FROM approved_breaks
+    WHERE vehicle_id = ?
+    ORDER BY start_time ASC
+  `).all(vehicleId);
+
+  let lunchCount = 0, lunchMins = 0;
+  let teaCount = 0, teaMins = 0;
+  let serviceCount = 0, serviceMins = 0;
+  let totalBreakMins = 0;
+
+  const processedBreaks = rawBreaks.map(b => {
+    const start = new Date(b.start_time);
+    const end = b.end_time ? new Date(b.end_time) : new Date();
+    const duration = Math.max(1, Math.round((end - start) / 60000));
+
+    if (b.break_type === 'Lunch') { lunchCount++; lunchMins += duration; }
+    else if (b.break_type === 'Tea') { teaCount++; teaMins += duration; }
+    else if (b.break_type === 'Service' || b.break_type === 'Emergency') { serviceCount++; serviceMins += duration; }
+
+    totalBreakMins += duration;
+
+    return {
+      ...b,
+      startTimeStr: start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      endTimeStr: b.end_time ? new Date(b.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Ongoing',
+      duration
+    };
+  });
+
+  // Fetch photo proofs for this vehicle
   let photoProofs = db.prepare(`
     SELECT * FROM campaign_photo_proofs
-    WHERE vehicle_id = ? AND (date(timestamp) = date(?) OR ? IS NULL OR ? = '')
+    WHERE vehicle_id = ?
     ORDER BY timestamp DESC LIMIT 6
-  `).all(vehicleId, dateStr || null, dateStr || null, dateStr || null);
-
-  if (photoProofs.length === 0) {
-    photoProofs = db.prepare(`
-      SELECT * FROM campaign_photo_proofs
-      WHERE vehicle_id = ?
-      ORDER BY timestamp DESC LIMIT 6
-    `).all(vehicleId);
-  }
+  `).all(vehicleId);
 
   // Convert all photo URLs to embedded Base64 Data URIs to guarantee rendering inside iframe / PDF print
   photoProofs = photoProofs.map(p => {
@@ -78,7 +101,7 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
   const hoursSeen = new Set();
   pings.forEach((p, idx) => {
     const hourKey = new Date(p.timestamp).getHours();
-    if (idx === 0 || idx === pings.length - 1 || p.speed === 0 || !hoursSeen.has(hourKey)) {
+    if (idx === 0 || idx === pings.length - 1 || p.speed === 0 || p.is_break || !hoursSeen.has(hourKey)) {
       sampledPings.push(p);
       hoursSeen.add(hourKey);
     }
@@ -90,13 +113,17 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
   const logoBase64 = getLogoBase64();
 
   const reportPayload = {
-    reportId: `REP-${vehicleId}-${dateStr}`,
+    reportId: `REP-${vehicleId}-${dateStr || 'LATEST'}`,
     vehicleId,
     plateNumber: vehicle.plate_number,
     vendorName: vehicle.vendor_name || 'Akash Outdoor Media',
     driverName: vehicle.driver_name || 'Unassigned Driver',
     campaignName: campaign.name,
     totalDistanceKm: totalDist,
+    totalBreakMins,
+    lunchCount,
+    teaCount,
+    serviceCount,
     slaScore,
     generatedAt: new Date().toISOString()
   };
@@ -139,13 +166,22 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     .meta-val { font-size: 14px; font-weight: 700; color: #ffffff; margin-top: 4px; }
     
     .kpi-row {
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;
     }
     .kpi-box {
       background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3);
-      padding: 16px; border-radius: 12px; text-align: center;
+      padding: 14px; border-radius: 12px; text-align: center;
     }
-    .kpi-num { font-size: 28px; font-weight: 800; color: #10b981; }
+    .kpi-num { font-size: 24px; font-weight: 800; color: #10b981; }
+
+    .break-summary-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px;
+    }
+    .break-summary-card {
+      background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px; text-align: center;
+    }
+    .break-title { font-size: 11px; color: #94a3b8; font-weight: 700; text-transform: uppercase; }
+    .break-val { font-size: 18px; font-weight: 800; color: #38bdf8; margin-top: 4px; }
 
     .section-title { font-size: 16px; font-weight: 700; color: #38bdf8; margin: 24px 0 12px 0; border-bottom: 1px solid #334155; padding-bottom: 6px; }
     
@@ -174,7 +210,7 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
       </div>
     </div>
     <div style="text-align: right;">
-      <div style="font-weight: 700; color: #ffffff;">Report Date: ${dateStr}</div>
+      <div style="font-weight: 700; color: #ffffff;">Report Date: ${dateStr || 'Latest Shift'}</div>
       <div style="font-size: 11px; color: #94a3b8;">Generated: ${new Date().toLocaleTimeString()}</div>
     </div>
   </div>
@@ -203,7 +239,64 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
       <div class="meta-label">Total Running Time</div>
       <div class="kpi-num">${Math.floor((vehicle.running_time_mins || 0) / 60)}h ${(vehicle.running_time_mins || 0) % 60}m</div>
     </div>
+    <div class="kpi-box">
+      <div class="meta-label">Total Break Time</div>
+      <div class="kpi-num" style="color: #38bdf8;">${Math.floor(totalBreakMins / 60)}h ${totalBreakMins % 60}m</div>
+    </div>
   </div>
+
+  <!-- APPROVED BREAKS AUDIT & COMPLIANCE SUMMARY (POINT 8) -->
+  <div class="section-title">☕ Approved Driver Break Compliance Summary</div>
+  
+  <div class="break-summary-grid">
+    <div class="break-summary-card">
+      <div class="break-title">🍱 Lunch Break</div>
+      <div class="break-val">${lunchCount} time(s)</div>
+      <div style="font-size: 11px; color: #94a3b8;">${lunchMins} mins total</div>
+    </div>
+    <div class="break-summary-card">
+      <div class="break-title">☕ Tea Break</div>
+      <div class="break-val">${teaCount} time(s)</div>
+      <div style="font-size: 11px; color: #94a3b8;">${teaMins} mins total</div>
+    </div>
+    <div class="break-summary-card">
+      <div class="break-title">🛠️ Service / Maintenance</div>
+      <div class="break-val">${serviceCount} time(s)</div>
+      <div style="font-size: 11px; color: #94a3b8;">${serviceMins} mins total</div>
+    </div>
+    <div class="break-summary-card">
+      <div class="break-title">⏳ Total Trip Break</div>
+      <div class="break-val" style="color: #4ade80;">${processedBreaks.length} break(s)</div>
+      <div style="font-size: 11px; color: #4ade80;">${totalBreakMins} mins total</div>
+    </div>
+  </div>
+
+  ${processedBreaks.length === 0 ? `
+    <div style="font-size: 12px; color: #94a3b8; font-style: italic; padding: 10px; background: #1e293b; border-radius: 8px; margin-bottom: 24px;">
+      No approved breaks taken during this shift.
+    </div>
+  ` : `
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 25%;">Break Type</th>
+          <th style="width: 25%;">Start Time</th>
+          <th style="width: 25%;">End Time</th>
+          <th style="width: 25%;">Duration (Minutes)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${processedBreaks.map(b => `
+          <tr>
+            <td><strong>${b.break_type === 'Lunch' ? '🍱 Lunch Break' : (b.break_type === 'Tea' ? '☕ Tea Break' : '🛠️ Vehicle Service')}</strong></td>
+            <td>${b.startTimeStr}</td>
+            <td>${b.endTimeStr}</td>
+            <td><strong style="color: #38bdf8;">${b.duration} mins</strong></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `}
 
   <div class="section-title">📸 40-Minute Driver Photo Proofs (${photoProofs.length} Uploaded)</div>
   ${photoProofs.length === 0 ? `
@@ -222,15 +315,16 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
     </div>
   `}
 
-  <div class="section-title">📍 Hourly Sampled Telemetry Corridor Log (${sampledPings.length} Samples)</div>
+  <div class="section-title">📍 Telemetry & Approved Break Corridor Log (${sampledPings.length} Samples)</div>
   <table>
     <thead>
       <tr>
-        <th style="width: 18%;">Timestamp</th>
-        <th style="width: 42%;">Location Landmark</th>
+        <th style="width: 16%;">Timestamp</th>
+        <th style="width: 34%;">Location Landmark</th>
         <th style="width: 15%;">GPS Coords</th>
-        <th style="width: 12%;">Speed</th>
-        <th style="width: 13%;">Status</th>
+        <th style="width: 10%;">Speed</th>
+        <th style="width: 12%;">Status</th>
+        <th style="width: 13%;">Break Type</th>
       </tr>
     </thead>
     <tbody>
@@ -240,7 +334,8 @@ export function generateDailyAuditReport(vehicleId, dateStr) {
           <td>${p.address || 'Corridor Route'}</td>
           <td>${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</td>
           <td>${p.speed} km/h</td>
-          <td><span style="color: ${p.speed > 0 ? '#4ade80' : '#f59e0b'}; font-weight: 600;">${p.speed > 0 ? 'Moving' : 'Idle'}</span></td>
+          <td><span style="color: ${p.is_break ? '#38bdf8' : (p.speed > 0 ? '#4ade80' : '#f59e0b')}; font-weight: 600;">${p.is_break ? 'Approved Break' : (p.speed > 0 ? 'Moving' : 'Idle')}</span></td>
+          <td><strong>${p.break_type ? (p.break_type === 'Lunch' ? '🍱 Lunch' : (p.break_type === 'Tea' ? '☕ Tea' : '🛠️ Service')) : '-'}</strong></td>
         </tr>
       `).join('')}
     </tbody>

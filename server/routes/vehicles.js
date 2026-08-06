@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { authMiddleware, requireRole } from '../middleware/auth.js';
+import { broadcastSSE } from '../sse.js';
 
 const router = Router();
 
@@ -59,28 +60,50 @@ router.post('/', authMiddleware, requireRole('ops_manager', 'vendor_manager'), (
     `).run(id, plate_number, vendor_id, assigned_driver_id || null, display_size || '12x6 ft Dual LED', current_city || 'Bengaluru');
 
     const newVehicle = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(id);
+    broadcastSSE('vehicle_updated', { vehicle_id: id });
     return res.json({ success: true, vehicle: newVehicle });
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
 });
 
-// POST /api/vehicles/settings (Persist Driver Duty & Real GPS Toggle State)
+// POST /api/vehicles/settings (Persist Driver Duty & Real GPS Toggle State with Real-Time SSE)
 router.post('/settings', authMiddleware, (req, res) => {
   const { vehicle_id, is_real_gps_active, is_duty_active } = req.body;
   if (!vehicle_id) return res.status(400).json({ error: 'vehicle_id is required' });
 
   try {
-    db.prepare(`
-      UPDATE vehicles
-      SET is_real_gps_active = COALESCE(?, is_real_gps_active),
-          is_duty_active = COALESCE(?, is_duty_active)
-      WHERE id = ?
-    `).run(is_real_gps_active !== undefined ? (is_real_gps_active ? 1 : 0) : null,
-           is_duty_active !== undefined ? (is_duty_active ? 1 : 0) : null,
-           vehicle_id);
+    const isEndingShift = is_duty_active === false || is_duty_active === 0;
+
+    if (isEndingShift) {
+      db.prepare(`
+        UPDATE vehicles
+        SET is_duty_active = 0,
+            status = 'Offline',
+            active_break_type = NULL,
+            current_speed = 0
+        WHERE id = ?
+      `).run(vehicle_id);
+
+      // Complete any active approved breaks for this vehicle
+      db.prepare(`
+        UPDATE approved_breaks
+        SET end_time = datetime('now'), status = 'COMPLETED'
+        WHERE vehicle_id = ? AND status = 'ACTIVE'
+      `).run(vehicle_id);
+    } else {
+      db.prepare(`
+        UPDATE vehicles
+        SET is_real_gps_active = COALESCE(?, is_real_gps_active),
+            is_duty_active = COALESCE(?, is_duty_active)
+        WHERE id = ?
+      `).run(is_real_gps_active !== undefined ? (is_real_gps_active ? 1 : 0) : null,
+             is_duty_active !== undefined ? (is_duty_active ? 1 : 0) : null,
+             vehicle_id);
+    }
 
     const updated = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
+    broadcastSSE('vehicle_updated', { vehicle_id, is_real_gps_active, is_duty_active, status: updated.status });
     return res.json({ success: true, vehicle: updated });
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -103,17 +126,24 @@ router.put('/:id', authMiddleware, requireRole('ops_manager', 'vendor_manager'),
   const { plate_number, assigned_driver_id, display_size, current_city, status } = req.body;
 
   try {
+    const newPlate = plate_number !== undefined ? plate_number : existing.plate_number;
+    const newDriver = assigned_driver_id !== undefined ? (assigned_driver_id || null) : existing.assigned_driver_id;
+    const newDisplay = display_size !== undefined ? display_size : existing.display_size;
+    const newCity = current_city !== undefined ? current_city : existing.current_city;
+    const newStatus = status !== undefined ? status : existing.status;
+
     db.prepare(`
       UPDATE vehicles 
-      SET plate_number = COALESCE(?, plate_number),
-          assigned_driver_id = COALESCE(?, assigned_driver_id),
-          display_size = COALESCE(?, display_size),
-          current_city = COALESCE(?, current_city),
-          status = COALESCE(?, status)
+      SET plate_number = ?,
+          assigned_driver_id = ?,
+          display_size = ?,
+          current_city = ?,
+          status = ?
       WHERE id = ?
-    `).run(plate_number, assigned_driver_id || null, display_size, current_city, status, vehicleId);
+    `).run(newPlate, newDriver, newDisplay, newCity, newStatus, vehicleId);
 
     const updated = db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicleId);
+    broadcastSSE('vehicle_updated', { vehicle_id: vehicleId });
     return res.json({ success: true, vehicle: updated });
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -142,6 +172,7 @@ router.delete('/:id', authMiddleware, requireRole('ops_manager', 'vendor_manager
     db.prepare('DELETE FROM campaign_photo_proofs WHERE vehicle_id = ?').run(vehicleId);
     db.prepare('DELETE FROM vehicles WHERE id = ?').run(vehicleId);
 
+    broadcastSSE('vehicle_updated', { vehicle_id: vehicleId });
     return res.json({ success: true, message: `Vehicle ${vehicleId} deleted successfully` });
   } catch (err) {
     return res.status(500).json({ error: `Failed to delete vehicle: ${err.message}` });
