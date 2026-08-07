@@ -135,6 +135,9 @@ export async function initDatabase() {
       active_break_type TEXT,
       is_real_gps_active INTEGER DEFAULT 0,
       is_duty_active INTEGER DEFAULT 1,
+      last_geocoded_lat REAL,
+      last_geocoded_lng REAL,
+      last_geocoded_address TEXT,
       FOREIGN KEY(vendor_id) REFERENCES vendors(id),
       FOREIGN KEY(assigned_driver_id) REFERENCES users(id) ON DELETE SET NULL
     );
@@ -145,7 +148,10 @@ export async function initDatabase() {
     { name: 'current_area', type: 'TEXT' },
     { name: 'active_break_type', type: 'TEXT' },
     { name: 'is_real_gps_active', type: 'INTEGER DEFAULT 0' },
-    { name: 'is_duty_active', type: 'INTEGER DEFAULT 1' }
+    { name: 'is_duty_active', type: 'INTEGER DEFAULT 1' },
+    { name: 'last_geocoded_lat', type: 'REAL' },
+    { name: 'last_geocoded_lng', type: 'REAL' },
+    { name: 'last_geocoded_address', type: 'TEXT' }
   ];
 
   for (const col of vehicleColumns) {
