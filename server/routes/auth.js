@@ -38,6 +38,11 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Full Name, Email, Password, and Primary Phone are required' });
   }
 
+  const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
+  if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+    return res.status(400).json({ error: 'Primary Phone must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9' });
+  }
+
   const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) {
     return res.status(400).json({ error: 'An account with this email already exists' });

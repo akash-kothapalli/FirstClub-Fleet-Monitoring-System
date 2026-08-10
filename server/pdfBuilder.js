@@ -45,18 +45,20 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     LIMIT 1
   `).get(vehicleId) || { name: 'FirstClub Outdoor LED Campaign', client: 'FirstClub Brand', target_km_per_day: 90 };
 
+  const targetDate = (dateStr && dateStr !== 'LATEST') ? dateStr : new Date().toISOString().split('T')[0];
+
   const pings = await db.prepare(`
     SELECT * FROM telemetry_pings 
-    WHERE vehicle_id = ?
+    WHERE vehicle_id = ? AND date(timestamp) = date(?)
     ORDER BY timestamp ASC
-  `).all(vehicleId);
+  `).all(vehicleId, targetDate);
 
   // Fetch approved breaks for this vehicle permanently from approved_breaks table
   let rawBreaks = await db.prepare(`
     SELECT * FROM approved_breaks
-    WHERE vehicle_id = ?
+    WHERE vehicle_id = ? AND date(start_time) = date(?)
     ORDER BY start_time ASC
-  `).all(vehicleId);
+  `).all(vehicleId, targetDate);
 
   let lunchCount = 0, lunchMins = 0;
   let teaCount = 0, teaMins = 0;
@@ -85,9 +87,9 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
   // Fetch photo proofs for this vehicle
   let photoProofs = await db.prepare(`
     SELECT * FROM campaign_photo_proofs
-    WHERE vehicle_id = ?
+    WHERE vehicle_id = ? AND date(timestamp) = date(?)
     ORDER BY timestamp DESC LIMIT 6
-  `).all(vehicleId);
+  `).all(vehicleId, targetDate);
 
   // Convert all photo URLs to embedded Base64 Data URIs to guarantee rendering inside iframe / PDF print
   photoProofs = photoProofs.map(p => {

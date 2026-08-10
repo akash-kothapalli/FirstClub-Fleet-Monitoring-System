@@ -33,12 +33,19 @@ export function AuthPage() {
   async function handleRegisterSubmit(e) {
     e.preventDefault();
     setErrorMsg('');
+
+    const cleanPhone = regPrimaryPhone.replace(/\D/g, '').slice(-10);
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+      setErrorMsg('Primary Phone must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 (e.g. 9876543210).');
+      return;
+    }
+
     try {
       await registerDriver({
         fullName: regName,
         email: regEmail,
         password: regPassword,
-        phone: regPrimaryPhone,
+        phone: cleanPhone,
         secondaryPhone: regSecondaryPhone,
         targetCity: regTargetCity,
         targetCampaignAreas: regCampaignAreas
@@ -140,12 +147,12 @@ export function AuthPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               <div>
-                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Primary Mobile (Req)</label>
-                <input type="text" className="input-search" placeholder="+91 98765 43210" value={regPrimaryPhone} onChange={e => setRegPrimaryPhone(e.target.value)} required />
+                <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Primary Mobile (Req 10 Digits)</label>
+                <input type="tel" className="input-search" placeholder="9876543210" maxLength={13} value={regPrimaryPhone} onChange={e => setRegPrimaryPhone(e.target.value)} required />
               </div>
               <div>
                 <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Secondary Mobile</label>
-                <input type="text" className="input-search" placeholder="+91 98765 43211" value={regSecondaryPhone} onChange={e => setRegSecondaryPhone(e.target.value)} />
+                <input type="tel" className="input-search" placeholder="9876543211" maxLength={13} value={regSecondaryPhone} onChange={e => setRegSecondaryPhone(e.target.value)} />
               </div>
             </div>
 

@@ -33,13 +33,25 @@ export function FleetMap({ mapMode, setMapMode }) {
     }
   }, []);
 
-  // Auto-center and Auto-zoom to selected vehicle location
+  // Auto-center, flyTo, and open popup for selected vehicle location
   useEffect(() => {
-    if (!mapInstance.current || !selectedVehicleId) return;
-    const selected = vehicles.find(v => String(v.id) === String(selectedVehicleId));
-    if (selected && selected.current_lat && selected.current_lng) {
-      mapInstance.current.invalidateSize();
-      mapInstance.current.setView([selected.current_lat, selected.current_lng], 14, { animate: true });
+    if (!mapInstance.current) return;
+
+    if (selectedVehicleId) {
+      const selected = vehicles.find(v => String(v.id) === String(selectedVehicleId));
+      if (selected && selected.current_lat && selected.current_lng) {
+        mapInstance.current.invalidateSize();
+        mapInstance.current.flyTo([selected.current_lat, selected.current_lng], 15, { duration: 1.2 });
+        const marker = markersRef.current[selected.id];
+        if (marker) marker.openPopup();
+      }
+    } else {
+      const validVehicles = vehicles.filter(v => v.current_lat && v.current_lng);
+      if (validVehicles.length > 0) {
+        const bounds = validVehicles.map(v => [v.current_lat, v.current_lng]);
+        mapInstance.current.invalidateSize();
+        mapInstance.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+      }
     }
   }, [selectedVehicleId, vehicles]);
 

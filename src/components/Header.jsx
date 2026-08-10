@@ -12,8 +12,8 @@ export function Header({ currentView, setView, openAdmin, openReport }) {
       <div className="brand">
         <img src="/firstclub-logo.png" alt="FirstClub Logo" className="brand-logo-img" />
         <div style={{ display: 'flex', flexDirection: 'column' }}>
-          <span style={{ fontSize: '18px', fontWeight: 800, lineHeight: 1.1, fontFamily: 'var(--font-heading)' }}>FirstClub FFMS</span>
-          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.5px' }}>CAMPAIGN COMMAND CENTER</span>
+          <span style={{ fontSize: '18px', fontWeight: 800, lineHeight: 1.1, fontFamily: 'var(--font-heading)' }}>FleetPulse - FirstClub FFMS</span>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500, letterSpacing: '0.5px' }}>CAMPAIGN COMMAND CENTER & FLEET INTELLIGENCE</span>
         </div>
       </div>
 
