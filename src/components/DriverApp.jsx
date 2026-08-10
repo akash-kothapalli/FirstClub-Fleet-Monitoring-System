@@ -175,7 +175,47 @@ export function DriverApp() {
     fetchVehicles();
   }
 
-  // Enhanced Multi-Photo Proof Upload with Dynamic Device GPS Location
+  function compressImage(file, maxWidth = 1600, maxHeight = 1600, quality = 0.75) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const reader = new FileReader();
+
+      reader.onload = (e) => {
+        img.src = e.target.result;
+      };
+
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressedBase64);
+      };
+
+      img.onerror = (err) => reject(err);
+      reader.onerror = (err) => reject(err);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Enhanced Multi-Photo Proof Upload with Auto-Compression & Dynamic Device GPS Location
   async function handlePhotoUpload(e) {
     if (!myVehicle) return;
     const files = Array.from(e.target.files || []);
@@ -186,49 +226,47 @@ export function DriverApp() {
       return;
     }
 
-    for (let f of files) {
-      if (f.size > 5 * 1024 * 1024) {
-        alert(`File ${f.name} exceeds 5MB limit.`);
-        return;
-      }
-    }
-
     setUploading(true);
     setUploadSuccessMsg('');
 
     const coords = await getCurrentCoords();
     let uploadedCount = 0;
+    let lastErrorMsg = '';
 
     for (let file of files) {
-      await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          try {
-            const res = await apiFetch('/api/telemetry/photo-proof', {
-              method: 'POST',
-              body: JSON.stringify({
-                vehicle_id: myVehicle.id,
-                photo_base64: reader.result,
-                lat: coords.lat,
-                lng: coords.lng
-              })
-            });
+      try {
+        const compressedBase64 = await compressImage(file, 1600, 1600, 0.75);
+        const res = await apiFetch('/api/telemetry/photo-proof', {
+          method: 'POST',
+          body: JSON.stringify({
+            vehicle_id: myVehicle.id,
+            photo_url: compressedBase64,
+            photo_base64: compressedBase64,
+            lat: coords.lat,
+            lng: coords.lng
+          })
+        });
 
-            if (res.success) uploadedCount++;
-          } catch (err) {
-            console.error('Photo upload error:', err.message);
-          } finally {
-            resolve();
-          }
-        };
-        reader.readAsDataURL(file);
-      });
+        if (res.success) {
+          uploadedCount++;
+        } else if (res.error) {
+          lastErrorMsg = res.error;
+        }
+      } catch (err) {
+        console.error('Photo upload/compression error:', err.message);
+        lastErrorMsg = err.message;
+      }
     }
 
     setUploading(false);
+    e.target.value = '';
+
     if (uploadedCount > 0) {
       setUploadSuccessMsg(`📸 ${uploadedCount} campaign proof photo(s) uploaded successfully!`);
       setSecondsRemaining(40 * 60);
+      fetchVehicles();
+    } else if (lastErrorMsg) {
+      setUploadSuccessMsg(`⚠️ Photo upload failed: ${lastErrorMsg}`);
     }
   }
 

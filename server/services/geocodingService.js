@@ -64,13 +64,20 @@ export function formatStructuredAddress(data, fallback) {
 
 // Reverse Geocode with LocationIQ as primary provider, Nominatim as secondary, and DB cache
 export async function reverseGeocodeWithCache(lat, lng) {
-  if (lat === undefined || lng === undefined || isNaN(lat) || isNaN(lng)) {
+  if (lat === undefined || lat === null || lng === undefined || lng === null) {
     return 'Unknown Location';
   }
 
-  const latRounded = Math.round(lat * 1000) / 1000;
-  const lngRounded = Math.round(lng * 1000) / 1000;
-  const fallbackAddress = `GPS Location (${lat.toFixed(4)}°, ${lng.toFixed(4)}°)`;
+  const numLat = Number(lat);
+  const numLng = Number(lng);
+
+  if (isNaN(numLat) || isNaN(numLng)) {
+    return 'Unknown Location';
+  }
+
+  const latRounded = Math.round(numLat * 1000) / 1000;
+  const lngRounded = Math.round(numLng * 1000) / 1000;
+  const fallbackAddress = `GPS Location (${numLat.toFixed(4)}°, ${numLng.toFixed(4)}°)`;
 
   // 1. Check SQLite Database Cache (~100m grid resolution)
   try {

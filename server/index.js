@@ -20,7 +20,7 @@ const PUBLIC_DIR = path.join(process.cwd(), 'public');
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '10mb' })); // Support base64 photo uploads
+app.use(express.json({ limit: '25mb' })); // Support multi-photo base64 uploads
 app.use(cookieParser());
 
 // Serve static assets & uploaded photo proofs

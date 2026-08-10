@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { calculateDistanceMeters, formatStructuredAddress } from '../server/services/geocodingService.js';
+import { calculateDistanceMeters, formatStructuredAddress, reverseGeocodeWithCache } from '../server/services/geocodingService.js';
 
 console.log('[TEST] LocationIQ Geocoding & Distance Throttling Service');
 
@@ -39,9 +39,16 @@ assert(formattedAddr.includes('Bengaluru East'), 'Address should contain Bengalu
 assert(formattedAddr.includes('Karnataka - 560103'), 'Address should contain state and zip code');
 console.log(`✓ LocationIQ structured address formatted cleanly: "${formattedAddr}"`);
 
-// 3. Test Graceful Fallback Handling
+// 3. Test Graceful Fallback Handling & Null Safety
 const fallbackFormatted = formatStructuredAddress(null, 'GPS Location (12.9220°, 77.6764°)');
 assert.strictEqual(fallbackFormatted, 'GPS Location (12.9220°, 77.6764°)');
 console.log('✓ Fallback handling verified when provider fails or response is null');
 
-console.log('✓ All Geocoding & Throttling unit tests passed!\n');
+async function testNullCheck() {
+  const nullRes = await reverseGeocodeWithCache(null, null);
+  assert.strictEqual(nullRes, 'Unknown Location', 'Null lat/lng should return Unknown Location');
+  console.log('✓ Null coordinate safety check verified!');
+  console.log('✓ All Geocoding & Throttling unit tests passed!\n');
+}
+
+testNullCheck();

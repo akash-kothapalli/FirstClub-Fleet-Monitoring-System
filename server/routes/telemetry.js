@@ -198,11 +198,12 @@ router.post('/batch', authMiddleware, batchPingLimiter, async (req, res) => {
 
 // 3. Campaign Photo Proof Upload Endpoint
 router.post('/photo-proof', authMiddleware, async (req, res) => {
-  const { vehicle_id, photo_url, lat, lng, address } = req.body;
+  const photoUrl = req.body.photo_url || req.body.photo_base64;
+  const { vehicle_id, lat, lng, address } = req.body;
   const user = req.user;
 
-  if (!vehicle_id || !photo_url) {
-    return res.status(400).json({ error: 'vehicle_id and photo_url are required' });
+  if (!vehicle_id || !photoUrl) {
+    return res.status(400).json({ error: 'vehicle_id and photo_url (or photo_base64) are required' });
   }
 
   const vehicle = await db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
@@ -210,12 +211,16 @@ router.post('/photo-proof', authMiddleware, async (req, res) => {
     return res.status(404).json({ error: 'Vehicle not found' });
   }
 
-  const proofLat = (lat !== undefined && !isNaN(lat)) ? lat : (vehicle.current_lat || 12.9220);
-  const proofLng = (lng !== undefined && !isNaN(lng)) ? lng : (vehicle.current_lng || 77.6764);
+  const proofLat = (lat !== undefined && lat !== null && !isNaN(Number(lat))) ? Number(lat) : (vehicle.current_lat || 12.9220);
+  const proofLng = (lng !== undefined && lng !== null && !isNaN(Number(lng))) ? Number(lng) : (vehicle.current_lng || 77.6764);
 
   let proofAddr = address;
   if (!proofAddr || proofAddr === 'Fetching location...') {
-    proofAddr = await reverseGeocodeWithCache(proofLat, proofLng);
+    try {
+      proofAddr = await reverseGeocodeWithCache(proofLat, proofLng);
+    } catch (e) {
+      proofAddr = `GPS Location (${proofLat.toFixed(4)}°, ${proofLng.toFixed(4)}°)`;
+    }
   }
 
   const proofId = `proof_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -223,7 +228,9 @@ router.post('/photo-proof', authMiddleware, async (req, res) => {
   await db.prepare(`
     INSERT INTO campaign_photo_proofs (id, vehicle_id, driver_id, photo_url, lat, lng, address, timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(proofId, vehicle_id, user.userId, photo_url, proofLat, proofLng, proofAddr);
+  `).run(proofId, vehicle_id, user.userId, photoUrl, proofLat, proofLng, proofAddr);
+
+  broadcastSSE('photo_proof_uploaded', { vehicle_id, proofId, photo_url: photoUrl, address: proofAddr });
 
   return res.json({ success: true, proof_id: proofId, address: proofAddr });
 });
