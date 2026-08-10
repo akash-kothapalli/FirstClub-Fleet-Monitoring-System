@@ -30,7 +30,7 @@ function resolveCityFromCoords(lat, lng) {
 
 // 1. Live Telemetry Single Ping Endpoint
 router.post('/ping', authMiddleware, livePingLimiter, async (req, res) => {
-  const { vehicle_id, campaign_id, lat, lng, speed, heading, is_break, break_type } = req.body;
+  const { vehicle_id, campaign_id, lat, lng, speed, heading, accuracy, is_break, break_type } = req.body;
 
   if (!vehicle_id || lat === undefined || lng === undefined) {
     return res.status(400).json({ error: 'vehicle_id, lat, and lng are required' });
@@ -107,9 +107,9 @@ router.post('/ping', authMiddleware, livePingLimiter, async (req, res) => {
   `).run(lat, lng, currentSpeed, heading || 0, newStatus, currentArea, currentCity, newTotalDist, newRunningTime, newIdleTime, newBreakTime, lastGeoLat, lastGeoLng, lastGeoAddr, vehicle_id);
 
   await db.prepare(`
-    INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, address, is_break, break_type, timestamp)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(vehicle_id, campaign ? campaign.id : 'c1', lat, lng, currentSpeed, heading || 0, currentArea, is_break ? 1 : 0, currentBreakType || null);
+    INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, accuracy, address, is_break, break_type, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(vehicle_id, campaign ? campaign.id : 'c1', lat, lng, currentSpeed, heading || 0, accuracy || 8.0, currentArea, is_break ? 1 : 0, currentBreakType || null);
 
   const evaluationPings = await db.prepare(`
     SELECT * FROM telemetry_pings WHERE vehicle_id = ? ORDER BY timestamp DESC LIMIT 30
@@ -237,7 +237,8 @@ router.post('/photo-proof', authMiddleware, async (req, res) => {
 
 // 4. Toggle Approved Driver Break Endpoint
 router.post('/breaks/toggle', authMiddleware, async (req, res) => {
-  const { vehicle_id, break_type, is_active } = req.body;
+  const { vehicle_id, break_type } = req.body;
+  const isActive = (req.body.is_starting !== undefined) ? Boolean(req.body.is_starting) : Boolean(req.body.is_active);
   const user = req.user;
 
   if (!vehicle_id || !break_type) {
@@ -253,7 +254,7 @@ router.post('/breaks/toggle', authMiddleware, async (req, res) => {
   const currentLng = vehicle.current_lng || 77.6764;
   const address = await reverseGeocodeWithCache(currentLat, currentLng);
 
-  if (is_active) {
+  if (isActive) {
     const breakId = `brk_${Date.now()}`;
     await db.prepare(`
       INSERT INTO approved_breaks (id, vehicle_id, driver_id, break_type, start_time, status, lat, lng, address)

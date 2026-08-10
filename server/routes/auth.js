@@ -38,10 +38,11 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Full Name, Email, Password, and Primary Phone are required' });
   }
 
-  const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
-  if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+  const digitsOnly = (phone || '').replace(/\D/g, '');
+  if (!/^(?:91)?[6-9]\d{9}$/.test(digitsOnly)) {
     return res.status(400).json({ error: 'Primary Phone must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9' });
   }
+  const cleanPhone = digitsOnly.length === 12 ? '+' + digitsOnly : '+91' + digitsOnly;
 
   const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) {

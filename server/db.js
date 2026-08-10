@@ -209,6 +209,10 @@ export async function initDatabase() {
     await db.exec(`ALTER TABLE telemetry_pings ADD COLUMN break_type TEXT;`);
   } catch (e) {}
 
+  try {
+    await db.exec(`ALTER TABLE telemetry_pings ADD COLUMN accuracy REAL DEFAULT 8.0;`);
+  } catch (e) {}
+
   await db.exec(`
     CREATE TABLE IF NOT EXISTS campaign_photo_proofs (
       id TEXT PRIMARY KEY,
@@ -226,11 +230,34 @@ export async function initDatabase() {
     CREATE TABLE IF NOT EXISTS geocode_cache (
       lat_rounded REAL NOT NULL,
       lng_rounded REAL NOT NULL,
+      actual_lat REAL,
+      actual_lng REAL,
       address TEXT NOT NULL,
+      is_precise INTEGER DEFAULT 1,
       cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (lat_rounded, lng_rounded)
     );
+  `);
 
+  try {
+    await db.exec(`ALTER TABLE geocode_cache ADD COLUMN actual_lat REAL;`);
+  } catch (e) {}
+  try {
+    await db.exec(`ALTER TABLE geocode_cache ADD COLUMN actual_lng REAL;`);
+  } catch (e) {}
+  try {
+    await db.exec(`ALTER TABLE geocode_cache ADD COLUMN is_precise INTEGER DEFAULT 1;`);
+  } catch (e) {}
+  try {
+    await db.exec(`ALTER TABLE geocode_cache ADD COLUMN cached_at DATETIME DEFAULT CURRENT_TIMESTAMP;`);
+  } catch (e) {}
+
+  // Systemic purge of legacy unvalidated cache entries
+  try {
+    await db.exec(`DELETE FROM geocode_cache WHERE actual_lat IS NULL OR is_precise = 0 OR address LIKE '%Badamanavarthekaval%';`);
+  } catch (e) {}
+
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS approved_breaks (
       id TEXT PRIMARY KEY,
       vehicle_id TEXT NOT NULL,

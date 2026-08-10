@@ -16,7 +16,7 @@ export function AuthPage() {
   const [regPrimaryPhone, setRegPrimaryPhone] = useState('');
   const [regSecondaryPhone, setRegSecondaryPhone] = useState('');
   const [regTargetCity, setRegTargetCity] = useState('Bengaluru');
-  const [regCampaignAreas, setRegCampaignAreas] = useState('Bellandur, Sarjapur, Indiranagar');
+  const [regCampaignAreas, setRegCampaignAreas] = useState('');
 
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -34,11 +34,13 @@ export function AuthPage() {
     e.preventDefault();
     setErrorMsg('');
 
-    const cleanPhone = regPrimaryPhone.replace(/\D/g, '').slice(-10);
-    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+    const digitsOnly = regPrimaryPhone.replace(/\D/g, '');
+    if (!/^(?:91)?[6-9]\d{9}$/.test(digitsOnly)) {
       setErrorMsg('Primary Phone must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9 (e.g. 9876543210).');
       return;
     }
+
+    const cleanPhone = digitsOnly.length === 12 ? '+' + digitsOnly : '+91' + digitsOnly;
 
     try {
       await registerDriver({
@@ -167,7 +169,7 @@ export function AuthPage() {
 
             <div>
               <label style={{ fontSize: '11px', color: '#94a3b8', display: 'block', marginBottom: '2px' }}>Target Campaign Operating Areas</label>
-              <input type="text" className="input-search" placeholder="e.g. Bellandur, Sarjapur, Indiranagar" value={regCampaignAreas} onChange={e => setRegCampaignAreas(e.target.value)} />
+              <input type="text" className="input-search" placeholder="Enter target operating corridors/areas..." value={regCampaignAreas} onChange={e => setRegCampaignAreas(e.target.value)} />
             </div>
 
             <button type="submit" className="duty-btn start" style={{ padding: '12px', fontSize: '15px', marginTop: '6px' }}>

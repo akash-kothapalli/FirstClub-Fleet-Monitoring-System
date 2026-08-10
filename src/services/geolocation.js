@@ -118,12 +118,14 @@ export function startHTML5Tracking(vehicleId, onLocationReceived, onError) {
       const speed = Math.round((position.coords.speed || 0) * 3.6); // Convert m/s to km/h
       const heading = position.coords.heading || 0;
 
+      const accuracy = position.coords.accuracy || 8.0;
       const pingPayload = {
         vehicle_id: vehicleId,
         lat,
         lng,
         speed,
         heading,
+        accuracy,
         address: `Live Device GPS (${lat.toFixed(4)}°, ${lng.toFixed(4)}°)`,
         is_break: 0,
         visibility_state: document.visibilityState

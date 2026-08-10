@@ -346,25 +346,37 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
   <table>
     <thead>
       <tr>
-        <th style="width: 18%;">Timestamp (IST)</th>
-        <th style="width: 32%;">Location Landmark</th>
-        <th style="width: 15%;">GPS Coords</th>
-        <th style="width: 10%;">Speed</th>
-        <th style="width: 12%;">Status</th>
-        <th style="width: 13%;">Break Type</th>
+        <th style="width: 15%;">Timestamp (IST)</th>
+        <th style="width: 28%;">Location Landmark</th>
+        <th style="width: 25%;">GPS Coords (Source of Truth)</th>
+        <th style="width: 10%;">GPS Accuracy</th>
+        <th style="width: 9%;">Speed</th>
+        <th style="width: 13%;">Status / Break</th>
       </tr>
     </thead>
     <tbody>
-      ${sampledPings.map(p => `
-        <tr>
-          <td>${formatISTTime(p.timestamp)}</td>
-          <td>${p.address || 'Corridor Route'}</td>
-          <td>${p.lat.toFixed(4)}, ${p.lng.toFixed(4)}</td>
-          <td>${p.speed} km/h</td>
-          <td><span style="color: ${p.is_break ? '#38bdf8' : (p.speed > 0 ? '#4ade80' : '#f59e0b')}; font-weight: 600;">${p.is_break ? 'Approved Break' : (p.speed > 0 ? 'Moving' : 'Idle')}</span></td>
-          <td><strong>${p.break_type ? (p.break_type === 'Lunch' ? '🍱 Lunch' : (p.break_type === 'Tea' ? '☕ Tea' : '🛠️ Service')) : '-'}</strong></td>
-        </tr>
-      `).join('')}
+      ${sampledPings.map(p => {
+        const mapsUrl = `https://www.google.com/maps?q=${p.lat},${p.lng}`;
+        const accuracyStr = p.accuracy ? `±${Math.round(p.accuracy)}m` : '±8m';
+        return `
+          <tr>
+            <td>${formatISTTime(p.timestamp)}</td>
+            <td>${p.address || 'Corridor Route'}</td>
+            <td>
+              <a href="${mapsUrl}" target="_blank" style="color: #38bdf8; text-decoration: none; font-weight: 600; font-family: monospace;">
+                📍 ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}
+              </a>
+            </td>
+            <td><span style="font-size: 10px; color: #4ade80; font-weight: 600;">${accuracyStr}</span></td>
+            <td>${p.speed} km/h</td>
+            <td>
+              <span style="color: ${p.is_break ? '#38bdf8' : (p.speed > 0 ? '#4ade80' : '#f59e0b')}; font-weight: 600;">
+                ${p.is_break ? (p.break_type ? `Break (${p.break_type})` : 'Approved Break') : (p.speed > 0 ? 'Moving' : 'Idle')}
+              </span>
+            </td>
+          </tr>
+        `;
+      }).join('')}
     </tbody>
   </table>
 

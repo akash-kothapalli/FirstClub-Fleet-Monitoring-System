@@ -15,9 +15,9 @@ export function calculateDistanceMeters(lat1, lng1, lat2, lng2) {
   return R * c;
 }
 
-// Clean address formatter for LocationIQ & Nominatim responses
+// Clean address formatter for LocationIQ & Nominatim responses with precision validation
 export function formatStructuredAddress(data, fallback) {
-  if (!data) return fallback;
+  if (!data) return { formatted: fallback, isPrecise: false };
 
   if (data.address) {
     const addr = data.address;
@@ -35,6 +35,8 @@ export function formatStructuredAddress(data, fallback) {
     const state = addr.state;
     const zip = addr.postcode;
 
+    const isPrecise = Boolean(mainLandmark || subLocality);
+
     if (mainLandmark) parts.push(mainLandmark);
     if (subLocality && !parts.includes(subLocality)) parts.push(subLocality);
     if (locality && !parts.includes(locality) && locality !== city) parts.push(locality);
@@ -49,17 +51,17 @@ export function formatStructuredAddress(data, fallback) {
       baseAddress += ` - ${zip}`;
     }
 
-    if (baseAddress.trim()) return baseAddress;
+    if (baseAddress.trim()) return { formatted: baseAddress, isPrecise };
   }
 
   // Fallback string deduplication if structured address object is unavailable
   if (data.display_name) {
     const tokens = data.display_name.split(',').map(s => s.trim());
     const uniqueTokens = Array.from(new Set(tokens));
-    return uniqueTokens.join(', ');
+    return { formatted: uniqueTokens.join(', '), isPrecise: false };
   }
 
-  return fallback;
+  return { formatted: fallback, isPrecise: false };
 }
 
 // Reverse Geocode with LocationIQ as primary provider, Nominatim as secondary, and DB cache
@@ -79,17 +81,27 @@ export async function reverseGeocodeWithCache(lat, lng) {
   const lngRounded = Math.round(numLng * 1000) / 1000;
   const fallbackAddress = `GPS Location (${numLat.toFixed(4)}°, ${numLng.toFixed(4)}°)`;
 
-  // 1. Check SQLite Database Cache (~100m grid resolution)
+  // 1. Check SQLite Database Cache (~110m grid resolution with 150m max-distance re-validation)
   try {
-    const cached = await db.prepare('SELECT address FROM geocode_cache WHERE lat_rounded = ? AND lng_rounded = ?').get(latRounded, lngRounded);
-    if (cached && cached.address) return cached.address;
+    const cached = await db.prepare(`
+      SELECT address, actual_lat, actual_lng, is_precise 
+      FROM geocode_cache 
+      WHERE lat_rounded = ? AND lng_rounded = ? AND cached_at >= datetime('now', '-24 hours')
+    `).get(latRounded, lngRounded);
+
+    if (cached && cached.address && cached.is_precise === 1) {
+      const distMeters = calculateDistanceMeters(numLat, numLng, cached.actual_lat, cached.actual_lng);
+      if (distMeters <= 150) {
+        return cached.address;
+      }
+    }
   } catch (err) {}
 
   const locationIqKey = process.env.LOCATIONIQ_API_KEY;
 
   // 2. Primary Provider: LocationIQ (5,000 requests/day free tier)
   if (locationIqKey && locationIqKey.trim()) {
-    const url = `https://us1.locationiq.com/v1/reverse?key=${locationIqKey.trim()}&lat=${lat}&lon=${lng}&format=json`;
+    const url = `https://us1.locationiq.com/v1/reverse?key=${locationIqKey.trim()}&lat=${numLat}&lon=${numLng}&format=json`;
 
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
@@ -99,32 +111,41 @@ export async function reverseGeocodeWithCache(lat, lng) {
 
         if (res.ok) {
           const data = await res.json();
-          const formattedAddress = formatStructuredAddress(data, fallbackAddress);
-          await db.prepare('INSERT OR REPLACE INTO geocode_cache (lat_rounded, lng_rounded, address) VALUES (?, ?, ?)').run(latRounded, lngRounded, formattedAddress);
-          return formattedAddress;
+          const { formatted, isPrecise } = formatStructuredAddress(data, fallbackAddress);
+          if (isPrecise) {
+            await db.prepare(`
+              INSERT OR REPLACE INTO geocode_cache (lat_rounded, lng_rounded, actual_lat, actual_lng, address, is_precise, cached_at)
+              VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            `).run(latRounded, lngRounded, numLat, numLng, formatted, 1);
+          }
+          return formatted;
         } else {
           console.warn(`[GEOCODE] LocationIQ API error (status ${res.status}), attempt ${attempt}/2`);
         }
       } catch (err) {
         console.warn(`[GEOCODE] LocationIQ fetch error on attempt ${attempt}/2:`, err.message);
       }
-      // Brief pause before retry
       if (attempt === 1) await new Promise(r => setTimeout(r, 400));
     }
   }
 
   // 3. Secondary Provider: OpenStreetMap Nominatim
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16`;
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${numLat}&lon=${numLng}&zoom=16`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'FirstClub-FFMS/1.0 (campaigns@firstclub.com)' }
     });
 
     if (res.ok) {
       const data = await res.json();
-      const formattedAddress = formatStructuredAddress(data, fallbackAddress);
-      await db.prepare('INSERT OR REPLACE INTO geocode_cache (lat_rounded, lng_rounded, address) VALUES (?, ?, ?)').run(latRounded, lngRounded, formattedAddress);
-      return formattedAddress;
+      const { formatted, isPrecise } = formatStructuredAddress(data, fallbackAddress);
+      if (isPrecise) {
+        await db.prepare(`
+          INSERT OR REPLACE INTO geocode_cache (lat_rounded, lng_rounded, actual_lat, actual_lng, address, is_precise, cached_at)
+          VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+        `).run(latRounded, lngRounded, numLat, numLng, formatted, 1);
+      }
+      return formatted;
     }
   } catch (err) {
     console.warn('[GEOCODE] Nominatim fetch error:', err.message);

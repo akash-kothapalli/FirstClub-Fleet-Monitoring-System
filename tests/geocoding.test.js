@@ -21,8 +21,8 @@ const distFar = calculateDistanceMeters(lat1, lng1, latFar, lngFar);
 assert(distFar >= 150, `Expected distance >= 150m, got ${distFar.toFixed(1)}m`);
 console.log(`✓ 200m movement calculated correctly: ${distFar.toFixed(1)}m (Triggers Reverse Geocoding API)`);
 
-// 2. Test LocationIQ Structured Address Parsing & Non-Repetitive Formatting
-const locationIqMockResponse = {
+// 2. Test LocationIQ Structured Address Parsing & Precision Validation
+const preciseMockResponse = {
   address: {
     road: 'Outer Ring Road',
     suburb: 'Bellandur',
@@ -33,22 +33,37 @@ const locationIqMockResponse = {
   }
 };
 
-const formattedAddr = formatStructuredAddress(locationIqMockResponse, 'Fallback');
-assert(formattedAddr.includes('Bellandur'), 'Address should contain Bellandur');
-assert(formattedAddr.includes('Bengaluru East'), 'Address should contain Bengaluru East');
-assert(formattedAddr.includes('Karnataka - 560103'), 'Address should contain state and zip code');
-console.log(`✓ LocationIQ structured address formatted cleanly: "${formattedAddr}"`);
+const preciseResult = formatStructuredAddress(preciseMockResponse, 'Fallback');
+assert.strictEqual(preciseResult.isPrecise, true, 'Precise response must have isPrecise=true');
+assert(preciseResult.formatted.includes('Bellandur'), 'Address should contain Bellandur');
+assert(preciseResult.formatted.includes('Karnataka - 560103'), 'Address should contain state and zip code');
+console.log(`✓ LocationIQ precise structured address validated: "${preciseResult.formatted}"`);
 
-// 3. Test Graceful Fallback Handling & Null Safety
-const fallbackFormatted = formatStructuredAddress(null, 'GPS Location (12.9220°, 77.6764°)');
-assert.strictEqual(fallbackFormatted, 'GPS Location (12.9220°, 77.6764°)');
+// 3. Test Coarse Revenue Village Response Rejection (Non-cachable)
+const coarseMockResponse = {
+  address: {
+    subdistrict: 'Badamanavarthekaval',
+    village: 'Vasudevapura',
+    state: 'Karnataka',
+    postcode: '560082'
+  }
+};
+
+const coarseResult = formatStructuredAddress(coarseMockResponse, 'Fallback');
+assert.strictEqual(coarseResult.isPrecise, false, 'Coarse revenue village response must have isPrecise=false to prevent caching');
+console.log('✓ Coarse revenue village response correctly flagged as non-cachable (isPrecise=false)');
+
+// 4. Test Graceful Fallback Handling & Null Safety
+const fallbackResult = formatStructuredAddress(null, 'GPS Location (12.9220°, 77.6764°)');
+assert.strictEqual(fallbackResult.formatted, 'GPS Location (12.9220°, 77.6764°)');
+assert.strictEqual(fallbackResult.isPrecise, false);
 console.log('✓ Fallback handling verified when provider fails or response is null');
 
-async function testNullCheck() {
+async function runAsyncTests() {
   const nullRes = await reverseGeocodeWithCache(null, null);
   assert.strictEqual(nullRes, 'Unknown Location', 'Null lat/lng should return Unknown Location');
   console.log('✓ Null coordinate safety check verified!');
   console.log('✓ All Geocoding & Throttling unit tests passed!\n');
 }
 
-testNullCheck();
+runAsyncTests();
