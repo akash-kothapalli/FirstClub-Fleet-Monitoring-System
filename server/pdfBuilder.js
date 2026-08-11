@@ -84,11 +84,11 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     };
   });
 
-  // Fetch photo proofs for this vehicle
+  // Fetch photo proofs for this vehicle (all photos uploaded during shift)
   let photoProofs = await db.prepare(`
     SELECT * FROM campaign_photo_proofs
     WHERE vehicle_id = ? AND date(timestamp) = date(?)
-    ORDER BY timestamp DESC LIMIT 6
+    ORDER BY timestamp DESC LIMIT 100
   `).all(vehicleId, targetDate);
 
   // Convert all photo URLs to embedded Base64 Data URIs to guarantee rendering inside iframe / PDF print
@@ -325,7 +325,7 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     </table>
   `}
 
-  <div class="section-title">📸 40-Minute Driver Photo Proofs (${photoProofs.length} Uploaded)</div>
+  <div class="section-title">📸 20-Minute Driver Photo Proofs (${photoProofs.length} Uploaded)</div>
   ${photoProofs.length === 0 ? `
     <div style="font-size: 12px; color: #94a3b8; font-style: italic; padding: 12px; background: #1e293b; border-radius: 8px;">
       No camera photo proofs uploaded for this shift. Compliance tracking active via GPS telemetry.

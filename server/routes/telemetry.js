@@ -223,7 +223,7 @@ router.post('/photo-proof', authMiddleware, async (req, res) => {
     }
   }
 
-  const proofId = `proof_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const proofId = `proof_${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${Math.floor(Math.random() * 10000)}`;
 
   await db.prepare(`
     INSERT INTO campaign_photo_proofs (id, vehicle_id, driver_id, photo_url, lat, lng, address, timestamp)

@@ -42,13 +42,23 @@ export function AuthPage() {
 
     const cleanPhone = digitsOnly.length === 12 ? '+' + digitsOnly : '+91' + digitsOnly;
 
+    let cleanSecondaryPhone = '';
+    if (regSecondaryPhone && regSecondaryPhone.trim()) {
+      const secDigitsOnly = regSecondaryPhone.replace(/\D/g, '');
+      if (!/^(?:91)?[6-9]\d{9}$/.test(secDigitsOnly)) {
+        setErrorMsg('Secondary Phone must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
+        return;
+      }
+      cleanSecondaryPhone = secDigitsOnly.length === 12 ? '+' + secDigitsOnly : '+91' + secDigitsOnly;
+    }
+
     try {
       await registerDriver({
         fullName: regName,
         email: regEmail,
         password: regPassword,
         phone: cleanPhone,
-        secondaryPhone: regSecondaryPhone,
+        secondaryPhone: cleanSecondaryPhone,
         targetCity: regTargetCity,
         targetCampaignAreas: regCampaignAreas
       });

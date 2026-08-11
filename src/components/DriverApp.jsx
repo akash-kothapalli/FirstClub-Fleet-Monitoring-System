@@ -24,11 +24,11 @@ export function DriverApp() {
   const [primaryPhone, setPrimaryPhone] = useState(user?.phone || '');
   const [secondaryPhone, setSecondaryPhone] = useState(user?.secondary_phone || '');
   const [targetCity, setTargetCity] = useState(user?.target_city || 'Bengaluru');
-  const [campaignAreas, setCampaignAreas] = useState(user?.target_campaign_areas || 'Bellandur, Sarjapur, Indiranagar');
+  const [campaignAreas, setCampaignAreas] = useState(user?.target_campaign_areas || '');
   const [profileSavedMsg, setProfileSavedMsg] = useState('');
 
-  // 40-Minute Photo Proof Countdown State
-  const [secondsRemaining, setSecondsRemaining] = useState(40 * 60);
+  // 20-Minute Photo Proof Countdown State
+  const [secondsRemaining, setSecondsRemaining] = useState(20 * 60);
   const [uploading, setUploading] = useState(false);
   const [uploadSuccessMsg, setUploadSuccessMsg] = useState('');
 
@@ -45,7 +45,7 @@ export function DriverApp() {
         setIsDutyActive(myVehicle.is_duty_active !== 0);
       }
 
-      if (myVehicle.current_area && myVehicle.current_area !== 'Bellandur & Sarjapur Tech Corridor' && myVehicle.current_area !== 'Fetching location...') {
+      if (myVehicle.current_area && myVehicle.current_area !== 'Fetching location...') {
         const area = myVehicle.current_area;
         const city = (myVehicle.current_city && myVehicle.current_city !== 'Fetching location...' && !area.toLowerCase().includes(myVehicle.current_city.toLowerCase())) ? `, ${myVehicle.current_city}` : '';
         setCurrentAddress(`${area}${city}`);
@@ -63,13 +63,13 @@ export function DriverApp() {
       setPrimaryPhone(user.phone || '');
       setSecondaryPhone(user.secondary_phone || '');
       setTargetCity(user.target_city || 'Bengaluru');
-      setCampaignAreas(user.target_campaign_areas || 'Bellandur, Sarjapur, Indiranagar');
+      setCampaignAreas(user.target_campaign_areas || '');
     }
   }, [user]);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setSecondsRemaining(prev => (prev > 0 ? prev - 1 : 40 * 60));
+      setSecondsRemaining(prev => (prev > 0 ? prev - 1 : 20 * 60));
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -83,10 +83,28 @@ export function DriverApp() {
   async function handleSaveProfile(e) {
     e.preventDefault();
     setProfileSavedMsg('');
+
+    const primDigits = primaryPhone.replace(/\D/g, '');
+    if (!/^(?:91)?[6-9]\d{9}$/.test(primDigits)) {
+      alert('Primary Phone must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
+      return;
+    }
+    const cleanPrimary = primDigits.length === 12 ? '+' + primDigits : '+91' + primDigits;
+
+    let cleanSecondary = '';
+    if (secondaryPhone && secondaryPhone.trim()) {
+      const secDigits = secondaryPhone.replace(/\D/g, '');
+      if (!/^(?:91)?[6-9]\d{9}$/.test(secDigits)) {
+        alert('Secondary Phone must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.');
+        return;
+      }
+      cleanSecondary = secDigits.length === 12 ? '+' + secDigits : '+91' + secDigits;
+    }
+
     try {
       await updateDriverProfile({
-        phone: primaryPhone,
-        secondary_phone: secondaryPhone,
+        phone: cleanPrimary,
+        secondary_phone: cleanSecondary,
         target_city: targetCity,
         target_campaign_areas: campaignAreas
       });
@@ -263,7 +281,7 @@ export function DriverApp() {
 
     if (uploadedCount > 0) {
       setUploadSuccessMsg(`📸 ${uploadedCount} campaign proof photo(s) uploaded successfully!`);
-      setSecondsRemaining(40 * 60);
+      setSecondsRemaining(20 * 60);
       fetchVehicles();
     } else if (lastErrorMsg) {
       setUploadSuccessMsg(`⚠️ Photo upload failed: ${lastErrorMsg}`);
@@ -395,10 +413,10 @@ export function DriverApp() {
         </div>
       </div>
 
-      {/* 40-Minute Driver Photo Proof Upload Module */}
+      {/* 20-Minute Driver Photo Proof Upload Module */}
       <div style={{ background: '#1e293b', border: '1px dashed #38bdf8', borderRadius: '12px', padding: '14px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8' }}>📸 40-Min Photo Proof Upload</span>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#38bdf8' }}>📸 20-Min Photo Proof Upload</span>
           <span style={{ fontSize: '12px', fontWeight: 800, color: secondsRemaining < 300 ? '#ef4444' : '#4ade80' }}>
             Due in: {formatCountdown(secondsRemaining)}
           </span>

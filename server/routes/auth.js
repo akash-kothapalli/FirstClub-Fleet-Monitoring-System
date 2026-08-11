@@ -44,6 +44,15 @@ router.post('/register', async (req, res) => {
   }
   const cleanPhone = digitsOnly.length === 12 ? '+' + digitsOnly : '+91' + digitsOnly;
 
+  let cleanSecondaryPhone = '';
+  if (secondaryPhone && secondaryPhone.trim()) {
+    const secDigitsOnly = secondaryPhone.replace(/\D/g, '');
+    if (!/^(?:91)?[6-9]\d{9}$/.test(secDigitsOnly)) {
+      return res.status(400).json({ error: 'Secondary Phone must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9' });
+    }
+    cleanSecondaryPhone = secDigitsOnly.length === 12 ? '+' + secDigitsOnly : '+91' + secDigitsOnly;
+  }
+
   const existing = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existing) {
     return res.status(400).json({ error: 'An account with this email already exists' });
@@ -63,7 +72,7 @@ router.post('/register', async (req, res) => {
     await db.prepare(`
       INSERT INTO users (id, email, password_hash, role, vendor_id, full_name, phone, secondary_phone, target_city, target_campaign_areas)
       VALUES (?, ?, ?, 'driver', ?, ?, ?, ?, ?, ?)
-    `).run(userId, email, passHash, vendorId, fullName, phone, secondaryPhone || '', targetCity || 'Bengaluru', targetCampaignAreas || '');
+    `).run(userId, email, passHash, vendorId, fullName, cleanPhone, cleanSecondaryPhone || '', targetCity || 'Bengaluru', targetCampaignAreas || '');
 
     const tokenPayload = {
       userId,
@@ -72,8 +81,8 @@ router.post('/register', async (req, res) => {
       vendorId,
       fullName,
       full_name: fullName,
-      phone: phone || '',
-      secondary_phone: secondaryPhone || '',
+      phone: cleanPhone,
+      secondary_phone: cleanSecondaryPhone || '',
       target_city: targetCity || 'Bengaluru',
       target_campaign_areas: targetCampaignAreas || ''
     };
