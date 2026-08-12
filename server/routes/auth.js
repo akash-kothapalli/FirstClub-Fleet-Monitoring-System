@@ -2,6 +2,7 @@ import { Router } from 'express';
 import crypto from 'node:crypto';
 import db from '../db.js';
 import { loginUser, revokeToken, authMiddleware, requireRole, generateToken } from '../middleware/auth.js';
+import { broadcastSSE } from '../sse.js';
 
 const router = Router();
 
@@ -134,6 +135,8 @@ router.post('/driver-profile', authMiddleware, async (req, res) => {
     if (updatedUser) {
       updatedUser.fullName = updatedUser.full_name;
     }
+
+    broadcastSSE('vehicle_updated', { userId });
     return res.json({ success: true, user: updatedUser });
   } catch (err) {
     return res.status(400).json({ error: err.message });

@@ -7,6 +7,7 @@ export function ReportModal({ isOpen, onClose }) {
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id || '');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [blobUrl, setBlobUrl] = useState('');
+  const [rawHtml, setRawHtml] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export function ReportModal({ isOpen, onClose }) {
     try {
       const data = await apiFetch(`/api/reports/daily?vehicle_id=${vehicleId}&date=${selectedDate}`);
       if (data.html) {
+        setRawHtml(data.html);
         if (blobUrl) URL.revokeObjectURL(blobUrl);
         const blob = new Blob([data.html], { type: 'text/html' });
         const newUrl = URL.createObjectURL(blob);
@@ -40,6 +42,22 @@ export function ReportModal({ isOpen, onClose }) {
     }
   }
 
+  function downloadReportFile() {
+    if (!rawHtml) return;
+    const selectedVeh = vehicles.find(v => v.id === vehicleId);
+    const driverName = selectedVeh?.driver_name || 'Driver';
+    const cleanDriverName = driverName.replace(/[^a-zA-Z0-9]/g, '_');
+    const filename = `FirstClub_Audit_Report_${cleanDriverName}_${selectedDate}.html`;
+
+    const blob = new Blob([rawHtml], { type: 'text/html' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   if (!isOpen) return null;
 
   return (
@@ -47,13 +65,14 @@ export function ReportModal({ isOpen, onClose }) {
       <div className="modal-card" style={{ maxWidth: '850px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ fontFamily: 'var(--font-heading)', color: '#38bdf8', fontSize: '18px', margin: 0 }}>
-            📄 Historical End-of-Day Campaign Audit Report
+            📄 FirstClub Outdoor LED Campaign Report
           </h2>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="map-btn active" onClick={() => {
+            <button className="map-btn active" onClick={downloadReportFile}>📥 Auto-Download Report</button>
+            <button className="map-btn" onClick={() => {
               const iframe = document.getElementById('audit-report-iframe');
               if (iframe) iframe.contentWindow.print();
-            }}>🖨️ Print / Download PDF</button>
+            }}>🖨️ Print / Save PDF</button>
             <button className="map-btn" onClick={onClose}>✕</button>
           </div>
         </div>

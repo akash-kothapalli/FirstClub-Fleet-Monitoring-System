@@ -1,15 +1,28 @@
 export function createSSEConnection(onPing, onAlert, onRefresh) {
   const evtSource = new EventSource('/api/events');
 
-  evtSource.addEventListener('telemetry_ping', (e) => {
-    if (onPing) onPing(JSON.parse(e.data));
-  });
+  const handleTelemetry = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      if (onPing) onPing(data);
+      if (onRefresh) onRefresh();
+    } catch (err) {}
+  };
+
+  evtSource.addEventListener('telemetry_ping', handleTelemetry);
+  evtSource.addEventListener('telemetry_update', handleTelemetry);
 
   evtSource.addEventListener('alert_triggered', (e) => {
-    if (onAlert) onAlert(JSON.parse(e.data));
+    try {
+      if (onAlert) onAlert(JSON.parse(e.data));
+    } catch (err) {}
   });
 
   evtSource.addEventListener('break_status_changed', () => {
+    if (onRefresh) onRefresh();
+  });
+
+  evtSource.addEventListener('photo_proof_uploaded', () => {
     if (onRefresh) onRefresh();
   });
 

@@ -163,7 +163,7 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>FirstClub FFMS Daily Campaign Audit Report - ${vehicle.plate_number}</title>
+  <title>FirstClub Outdoor LED Campaign Report - ${vehicle.plate_number}</title>
   <style>
     @media print {
       body { background: #ffffff !important; color: #000000 !important; }
@@ -232,7 +232,7 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     <div style="display: flex; align-items: center; gap: 12px;">
       ${logoBase64 ? `<img src="${logoBase64}" class="logo-img" alt="FirstClub Logo">` : ''}
       <div>
-        <div class="brand-title">FirstClub FFMS Audit Report</div>
+        <div class="brand-title">FirstClub Outdoor LED Campaign Report</div>
         <div class="sub-title">CAMPAIGN EXECUTION BILLING PROOF • AUDIT VERIFIED</div>
       </div>
     </div>

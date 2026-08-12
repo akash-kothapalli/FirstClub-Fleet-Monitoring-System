@@ -79,7 +79,7 @@ router.post('/settings', authMiddleware, async (req, res) => {
       await db.prepare(`
         UPDATE vehicles
         SET is_duty_active = 0,
-            status = 'Offline',
+            status = 'Shift Completed',
             active_break_type = NULL,
             current_speed = 0
         WHERE id = ?
@@ -91,6 +91,18 @@ router.post('/settings', authMiddleware, async (req, res) => {
         SET end_time = datetime('now'), status = 'COMPLETED'
         WHERE vehicle_id = ? AND status = 'ACTIVE'
       `).run(vehicle_id);
+
+      // Log an explicit final 'Shift Completed' telemetry record for daily corridor audit logs
+      try {
+        const vObj = await db.prepare('SELECT * FROM vehicles WHERE id = ?').get(vehicle_id);
+        const endLat = vObj?.current_lat || 12.9220;
+        const endLng = vObj?.current_lng || 77.6764;
+        const endAddr = (vObj?.current_area && vObj.current_area !== 'Fetching location...') ? vObj.current_area : 'Shift Ended by Driver';
+        await db.prepare(`
+          INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, accuracy, address, is_break, break_type, timestamp)
+          VALUES (?, 'c1', ?, ?, 0, 0, 5.0, ?, 0, NULL, datetime('now'))
+        `).run(vehicle_id, endLat, endLng, endAddr);
+      } catch (e) {}
     } else {
       await db.prepare(`
         UPDATE vehicles

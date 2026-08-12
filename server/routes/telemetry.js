@@ -89,7 +89,8 @@ router.post('/ping', authMiddleware, livePingLimiter, async (req, res) => {
       Math.cos(vehicle.current_lat * Math.PI / 180) * Math.cos(lat * Math.PI / 180) *
       Math.sin(dLng / 2) * Math.sin(dLng / 2);
     distIncrement = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    if (distIncrement > 2) distIncrement = 0;
+    // Filter out stationary GPS noise under 15 meters (< 0.015 km) or unrealistic jumps (> 2 km)
+    if (distIncrement < 0.015 || distIncrement > 2) distIncrement = 0;
   }
 
   const newTotalDist = (vehicle.today_distance_km || 0) + distIncrement;
@@ -229,6 +230,15 @@ router.post('/photo-proof', authMiddleware, async (req, res) => {
     INSERT INTO campaign_photo_proofs (id, vehicle_id, driver_id, photo_url, lat, lng, address, timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(proofId, vehicle_id, user.userId, photoUrl, proofLat, proofLng, proofAddr);
+
+  // Auto-record a telemetry ping for photo proof submissions so corridor logs retain full record
+  try {
+    const isBreakActive = vehicle.active_break_type ? 1 : 0;
+    await db.prepare(`
+      INSERT INTO telemetry_pings (vehicle_id, campaign_id, lat, lng, speed, heading, accuracy, address, is_break, break_type, timestamp)
+      VALUES (?, 'c1', ?, ?, 0, 0, 5.0, ?, ?, ?, datetime('now'))
+    `).run(vehicle_id, proofLat, proofLng, proofAddr, isBreakActive, vehicle.active_break_type || null);
+  } catch (e) {}
 
   broadcastSSE('photo_proof_uploaded', { vehicle_id, proofId, photo_url: photoUrl, address: proofAddr });
 

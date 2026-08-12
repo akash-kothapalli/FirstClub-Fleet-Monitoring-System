@@ -67,6 +67,55 @@ export function DriverApp() {
     }
   }, [user]);
 
+  // 10-Minute Telemetry Heartbeat Loop with Page Visibility Resume Catch-Up Ping
+  useEffect(() => {
+    if (!myVehicle || !isDutyActive) return;
+
+    let lastPingTimestamp = Date.now();
+
+    async function sendHeartbeatPing() {
+      const coords = await getCurrentCoords();
+      if (coords && coords.lat && coords.lng) {
+        try {
+          await apiFetch('/api/telemetry/ping', {
+            method: 'POST',
+            body: JSON.stringify({
+              vehicle_id: myVehicle.id,
+              lat: coords.lat,
+              lng: coords.lng,
+              speed: 0,
+              heading: 0,
+              accuracy: coords.accuracy || 8.0,
+              is_break: activeBreak ? 1 : 0,
+              break_type: activeBreak || null
+            })
+          });
+          lastPingTimestamp = Date.now();
+        } catch (e) {}
+      }
+    }
+
+    sendHeartbeatPing();
+    const interval = setInterval(sendHeartbeatPing, 10 * 60 * 1000);
+
+    // Immediate catch-up ping when tab becomes visible after backgrounding
+    function handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        const elapsedMins = (Date.now() - lastPingTimestamp) / 60000;
+        if (elapsedMins >= 3) {
+          sendHeartbeatPing();
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [myVehicle?.id, isDutyActive, activeBreak]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setSecondsRemaining(prev => (prev > 0 ? prev - 1 : 20 * 60));
