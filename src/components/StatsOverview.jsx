@@ -1,17 +1,33 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFleet } from '../context/FleetContext';
+import { apiFetch } from '../services/api';
 
 export function StatsOverview() {
   const { vehicles, alerts } = useFleet();
+  const [fleetDistData, setFleetDistData] = useState(null);
+
+  useEffect(() => {
+    async function loadFleetDistance() {
+      try {
+        const data = await apiFetch('/api/reports/driver-distances');
+        if (data && data.fleet_total_distance_km !== undefined) {
+          setFleetDistData(data);
+        }
+      } catch (e) {}
+    }
+    loadFleetDistance();
+  }, [vehicles]);
 
   const activeCount = vehicles.filter(v => v.status !== 'Offline').length;
-  const totalKm = vehicles.reduce((sum, v) => sum + (v.today_distance_km || 0), 0);
+  const liveSumKm = vehicles.reduce((sum, v) => sum + (v.today_distance_km || 0), 0);
+  const totalKm = (fleetDistData && fleetDistData.fleet_total_distance_km > 0) ? fleetDistData.fleet_total_distance_km : liveSumKm;
+
   const movingCount = vehicles.filter(v => v.status === 'Moving').length;
   const idleCount = vehicles.filter(v => v.status === 'Idle').length;
   const breakCount = vehicles.filter(v => v.status === 'On Approved Break').length;
   const criticalAlerts = alerts.filter(a => a.severity === 'CRITICAL' && !a.acknowledged).length;
 
-  const targetKmTotal = Math.max(90, vehicles.length * 90);
+  const targetKmTotal = fleetDistData ? fleetDistData.fleet_target_km : Math.max(270, vehicles.length * 90);
   const breachCount = alerts.filter(a => a.alert_type === 'GEOFENCE_BREACH').length;
   const geofenceCompliancePct = vehicles.length > 0
     ? Math.max(70, Math.min(100, (100 - (breachCount * 3.2)))).toFixed(1)
