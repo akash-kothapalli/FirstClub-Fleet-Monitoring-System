@@ -4,27 +4,30 @@
 [![License](https://img.shields.io/badge/license-Proprietary-blue.svg)]()
 [![Production Ready](https://img.shields.io/badge/production-ready-emerald.svg)]()
 
-FirstClub FFMS is a high-precision, enterprise-grade **LED Van Fleet Monitoring & Field Force Management Platform** built for real-time telemetry ingestion, cellular dead-zone offline buffering, campaign corridor auditing, automated geofence breach detection, role-based vendor access control, and 40-minute driver photo proof uploads.
+FirstClub FFMS is an enterprise-grade **LED Van Fleet Monitoring & Field Force Management Platform** built for real-time telemetry ingestion, cellular dead-zone offline buffering, campaign corridor auditing, driver-wise actual GPS route distance calculation, automated geofence breach detection, role-based vendor access control, and 20-minute driver photo proof uploads.
 
 ---
 
 ## 📋 1. Project Overview
 
 ### What the Project Does
-FirstClub FFMS tracks digital out-of-home (DOOH) LED campaign trucks operating across major Indian metropolitan corridors (Bengaluru, Mumbai, Delhi, Hyderabad). It processes live GPS telemetry pings, buffers offline dead-zone data via IndexedDB, calculates actual daily distance (km) and operational duty hours, alerts on geofence deviations or excessive halts, and generates executive PDF audit reports for client billing proof.
+FirstClub FFMS tracks digital out-of-home (DOOH) LED campaign trucks operating across major Indian metropolitan corridors (Bengaluru, Mumbai, Delhi, Hyderabad). It processes live GPS telemetry pings, buffers offline dead-zone data via IndexedDB, calculates actual daily route distance (km) and operational duty hours, alerts on geofence deviations or excessive halts, and generates executive PDF audit reports for client billing proof.
 
-### Key Features
-- **Real-Time GPS Telemetry & Heatmap**: Live tracking of moving, idle, and on-break LED vans with smooth auto-centering, zoom, dynamic marker status, and dynamic density heatmap overlays.
-- **IndexedDB Dead-Zone Offline Buffering**: Automatic client-side queuing of telemetry pings in browser `IndexedDB` during cellular dead zones, with auto-flushing to `POST /api/telemetry/batch` when network connection is restored.
-- **2D Geographic City Detection**: Genuine 2D bounding-box spatial coordinate matching for Bengaluru, Mumbai, Delhi, and Hyderabad with `'Unknown City'` fallback handling.
-- **Strict Role Isolation**:
-  - **Super Admin / Ops Manager (`ops_manager`)**: Full nationwide fleet visibility, vehicle CRUD, SLA breach monitoring, and PDF report generation.
-  - **Vendor Manager (`vendor_manager`)**: Scoped exclusively to assigned vendor fleet (`v1` Envision Advertising). Cannot access or tamper with other vendors' vehicles or alerts.
-  - **Driver (`driver`)**: Scoped strictly to assigned vehicle telemetry, Start/End Shift duty toggle, hardware GPS mode, approved break controls, driver profile registration, and multi-photo proof uploads.
-- **State Persistence**: SQLite database persistence across page reloads for driver shift duty status, active break selection (Lunch, Tea, Service), and hardware GPS toggle mode.
-- **Real-Time Server-Sent Events (SSE)**: Low-latency SSE streaming (`/api/events`) for instant broadcast of vehicle movements, status updates, and critical alerts.
-- **40-Min Multi-Photo Proof Upload**: Multi-select camera & gallery image upload (up to 4 images per submission) with automated 40-minute countdown timer for proof of campaign execution.
-- **Automated PDF Report Generation**: Dynamic multi-vehicle PDF audit report generator with campaign summary, route map visualization, hour-by-hour breakdown, and photo proof exhibits.
+### Key Features & Architecture
+- **Driver-Wise Actual GPS Route Distance Calculation**: Calculates exact route distance travelled by each driver using Haversine formula across consecutive GPS coordinates. Includes a **15-meter minimum displacement filter** to eliminate stationary GPS jitter from billing numbers.
+- **7-Day Driver Distance Roster & Historical Logging**: Interactive manager modal (`DriverDistanceModal.jsx`) displaying driver-wise distance summaries, shift duty windows, and historical 7-day logs for any selected date.
+- **Combined Fleet Distance & Target Tracking**: Displays combined distance covered across all drivers today vs Fleet Target (e.g. `Total Distance Today: 186.4 km | Fleet Target: 270 km`).
+- **Page Visibility Resume Catch-Up Pings**: Uses the Page Visibility API (`visibilitychange`) to fire an immediate catch-up ping when a driver unlocks their phone or returns to the app tab, closing background gaps instantly.
+- **10-Minute Telemetry Heartbeat Loop & Teardown**: Automated 10-minute heartbeat loop paired with Screen WakeLock API (`navigator.wakeLock.request('screen')`). Includes clean `clearInterval` teardown on shift end to prevent double timers.
+- **Terminal Shift Status (`Shift Completed`)**: Ending a shift updates vehicle status to `'Shift Completed'` across Command Center roster cards and PDF reports, writing an explicit final timestamped telemetry ping.
+- **Real-Time Server-Sent Events (SSE)**: Low-latency SSE streaming (`/api/events`) for instant broadcast of vehicle movements, status updates, break toggling, photo uploads, and critical alerts without requiring page refreshes.
+- **20-Min Multi-Photo Proof Upload**: Multi-select camera & gallery image upload with automated 20-minute countdown timer, microsecond high-entropy primary keys (`proof_${Date.now()}_...`), and auto-telemetry ping recording.
+- **PDF Auto-Download & Standardized Filenames**: Automatic blob download in `ReportModal.jsx` with standardized filename format (`FirstClub_Audit_Report_<DriverName>_<Date>.html/.pdf`) and concise report header (`FirstClub Outdoor LED Campaign Report`).
+- **Strict 10-Digit Indian Mobile Number Validation**: Enforces `/^(?:91)?[6-9]\d{9}$/` regex testing on both Primary and Secondary mobile numbers across frontend forms and backend API routes.
+- **Precision-Gated Geocoding & Systemic Cache Purge**: Precision landmark check (`isPrecise`), 150m Haversine distance re-validation on cache hits, and automated systemic purge of legacy/coarse revenue village cache entries (`Badamanavarthekaval`).
+- **Turso Cloud SQLite & Local Persistence**: Dual-database engine supporting Turso Cloud SQLite (`@libsql/client`) or embedded Node.js 24 SQLite (`node:sqlite`) with Write-Ahead Logging (WAL) mode.
+- **IndexedDB Dead-Zone Offline Buffering**: Client-side queuing of telemetry pings in browser `IndexedDB` during cellular dead zones, with auto-flushing to `POST /api/telemetry/batch` when connectivity is restored.
+- **Strict Role Isolation (RBAC)**: Role-based access control for Operations Managers (`ops_manager`), Vendor Managers (`vendor_manager`), and Drivers (`driver`).
 
 ---
 
@@ -33,15 +36,15 @@ FirstClub FFMS tracks digital out-of-home (DOOH) LED campaign trucks operating a
 | Layer | Technology | Purpose |
 | :--- | :--- | :--- |
 | **Frontend Framework** | React 18 (Vite 6) | Component-driven UI with low-latency client rendering |
-| **Styling** | Modern Vanilla CSS | Modern dark glassmorphism aesthetic with CSS custom properties |
+| **Styling** | Modern Vanilla CSS | Glassmorphism dark aesthetic with CSS custom properties |
 | **Client Storage** | IndexedDB (`fleet_offline_db`) | Offline telemetry ping buffering during cellular dead zones |
-| **Maps & Spatial** | Leaflet 1.9.4 & HTML5 Canvas | Lightweight interactive mapping, tile caching, dynamic heatmap density circles |
-| **Backend Core** | Node.js 24 + Express 4 | REST API backend, static file serving, and security middleware |
-| **Database** | Node SQLite (`node:sqlite`) | High-performance embedded SQLite database with WAL (Write-Ahead Logging) mode |
+| **Maps & Spatial** | Leaflet 1.9.4 & HTML5 Canvas | Interactive mapping, tile caching, dynamic heatmap density circles |
+| **Backend Core** | Node.js 24 + Express 4 | REST API backend, static file serving, rate limiting, and security middleware |
+| **Database** | Node SQLite (`node:sqlite`) / Turso Cloud SQLite | High-performance embedded SQLite or Turso Cloud database with WAL mode |
 | **Real-Time Streaming** | Server-Sent Events (SSE) | Unidirectional event streaming (`/api/events`) with automatic client reconnection |
 | **Authentication** | HMAC-SHA256 Signed JWT | Secure cookie & Bearer token authentication with session revocation |
-| **PDF Generation** | HTML Canvas & PDFKit Pattern | Dynamic multi-vehicle executive daily audit report generation |
-| **Build & Deploy** | Vite, Docker, Docker Compose, PM2 | Multi-stage Docker deployment, fast production bundling |
+| **PDF Generation** | HTML Canvas & PDFKit Pattern | Executive daily audit report generation engine with cryptographic HMAC audit signatures |
+| **Build & Deploy** | Vite, Render, Docker, Docker Compose | Production multi-stage build, container orchestration |
 
 ---
 
@@ -53,28 +56,27 @@ led-fleet-monitoring/
 ├── docker-compose.yml          # Container orchestration with data & upload volume persistence
 ├── index.html                  # Single Page Application HTML entry point
 ├── package.json                # Project dependencies, scripts, and engine specs
-├── pm2.config.js               # PM2 Process Manager configuration
 ├── vite.config.js              # Vite server & API proxy configuration
 ├── data/                       # SQLite WAL database directory (persisted volume)
 │   └── fleet.db
 ├── public/                     # Static assets (logos, icons, default images)
-├── uploads/                    # Physical upload storage for campaign photo proofs (persisted volume)
+├── uploads/                    # Physical upload storage for campaign photo proofs
 │   └── proofs/
 ├── server/                     # Backend Express server modules
 │   ├── index.js                # Server entry point, middleware setup, SSE stream
 │   ├── db.js                   # SQLite schema initialization, safe migrations, seeds
 │   ├── alerts.js               # Automated alert evaluation rules (geofence, idle, speed)
-│   ├── geofence.js             # 2D Ray-Casting Point-in-Polygon & reverse geocoding
-│   ├── logger.js               # Structured logging utility
 │   ├── pdfBuilder.js           # Daily audit PDF report generator engine
+│   ├── sse.js                  # Server-Sent Events broadcast manager
 │   ├── middleware/
-│   │   └── auth.js             # JWT verification, session tracking, role-based guard
+│   │   ├── auth.js             # JWT verification, session tracking, role-based guard
+│   │   └── rateLimiter.js      # Rate limiting middleware for telemetry endpoints
 │   ├── routes/
-│   │   ├── auth.js             # Login, logout, session verification routes
+│   │   ├── auth.js             # Login, logout, profile update, driver roster routes
 │   │   ├── vehicles.js         # Vehicle CRUD, settings persistence, driver assignment
 │   │   ├── telemetry.js        # Live GPS ping ingestion, batch upload, photo proofs
 │   │   ├── campaigns.js        # Campaign corridors and geofence definitions
-│   │   └── reports.js          # Executive PDF audit report endpoints
+│   │   └── reports.js          # Executive PDF audit reports & driver distance endpoints
 │   └── utils/
 │       └── geofenceCheck.js    # Landmark grid reverse geocoder & 2D CITY_ZONES
 ├── src/                        # Frontend React application
@@ -87,9 +89,10 @@ led-fleet-monitoring/
 │   │   ├── AuthPage.jsx        # Production login screen & driver registration form
 │   │   ├── Dashboard.jsx       # Operations Manager Command Center
 │   │   ├── DriverApp.jsx       # Mobile Driver interface & location/break controls
+│   │   ├── DriverDistanceModal.jsx # Driver-wise distance roster & 7-day log modal
 │   │   ├── FleetMap.jsx        # Leaflet map instance, dynamic markers, heatmap layer
 │   │   ├── Header.jsx          # Header navigation bar, user profile, logout
-│   │   ├── ReportModal.jsx     # Dynamic multi-vehicle PDF audit report modal
+│   │   ├── ReportModal.jsx     # Executive PDF audit report modal & auto-downloader
 │   │   ├── RouteReplay.jsx     # Historical GPS breadcrumb route playback
 │   │   └── StatsOverview.jsx   # High-level fleet KPIs (Total Distance, Active Vans, SLA)
 │   ├── context/
@@ -97,10 +100,12 @@ led-fleet-monitoring/
 │   │   └── FleetContext.jsx    # Live vehicle state, SSE listener, alert state
 │   └── services/
 │       ├── api.js              # Fetch wrapper with auto token injection & error handling
-│       └── geolocation.js      # HTML5 navigator.geolocation & IndexedDB offline queue
+│       ├── geolocation.js      # HTML5 navigator.geolocation & IndexedDB offline queue
+│       └── socket.js           # Server-Sent Events (SSE) client stream subscriber
 └── tests/                      # Automated unit & security test suites
     ├── alertRules.test.js      # Alert evaluation unit tests
     ├── auth.test.js           # JWT & password hashing tests
+    ├── geocoding.test.js       # Reverse geocoding & precision cache tests
     ├── geofence.test.js        # Ray-casting point-in-polygon math tests
     ├── offlineSync.test.js     # Batch telemetry ingestion & offline queue tests
     ├── testRunner.js           # Test suite execution runner
@@ -109,23 +114,23 @@ led-fleet-monitoring/
 
 ---
 
-## ⚙️ 4. Prerequisites
+## ⚙️ 4. Environment Variables
 
-Before setting up FirstClub FFMS locally or in production, ensure your system meets the following requirements:
+Configure environment variables in a `.env` file or within your deployment provider (e.g. Render):
 
-- **Node.js**: Version `>=20.0.0` (LTS recommended, tested on `v24.18.1`)
-- **npm**: Version `>=10.0.0`
-- **Operating System**: Windows, macOS, or Linux (Ubuntu 22.04 LTS tested)
-- **Environment Variables**:
-  - `PORT`: Server HTTP port (Default: `3000`)
-  - `NODE_ENV`: Application environment (`development` or `production`)
-  - `JWT_SECRET`: HMAC-SHA256 signing secret key
+| Variable | Required | Default | Description |
+| :--- | :---: | :--- | :--- |
+| `PORT` | Optional | `3000` | Express HTTP server port |
+| `NODE_ENV` | Optional | `development` | Application environment (`development` or `production`) |
+| `JWT_SECRET` | Recommended | `firstclub_...` | Secret key for signing HMAC-SHA256 authentication tokens |
+| `DATA_DIR` | Optional | `./data` or `/var/data` | Directory path for SQLite database file persistence |
+| `UPLOADS_DIR` | Optional | `./uploads/proofs` | Directory path for storing uploaded photo proof images |
+| `TURSO_DATABASE_URL` | Optional | `undefined` | Turso Cloud SQLite database URL (e.g. `libsql://...`) |
+| `TURSO_AUTH_TOKEN` | Optional | `undefined` | Turso Cloud SQLite authentication token |
 
 ---
 
-## 🚀 5. Local Setup & Quick Start
-
-Follow these step-by-step instructions to run FirstClub FFMS on your local machine:
+## 🚀 5. Local Setup & Installation
 
 ### Step 1: Install Dependencies
 ```bash
@@ -133,154 +138,61 @@ npm install
 ```
 
 ### Step 2: Run Automated Unit & Security Tests
-Verify that all core math, auth, scoping security, and offline batch sync tests pass:
 ```bash
 npm test
 ```
 
-### Step 3: Build Production Assets
-Build the Vite React frontend into the `dist/` directory:
+### Step 3: Build Production Bundle
 ```bash
 npm run build
 ```
 
-### Step 4: Start Backend & Application Server
-Launch the Express server with SQLite WAL database initialization:
+### Step 4: Start Express Server
 ```bash
 npm run server
 ```
 
-### Step 5: Production User Credentials
-
-| Role | Name | Email | Password | Scope |
-| :--- | :--- | :--- | :--- | :--- |
-| **Ops Manager 1** | Akash | `akash.kothapalli@firstclub.co.in` | `password123` | Full Nationwide Operations |
-| **Ops Manager 2** | Bapu Kale | `bapu.kale@firstclub.co.in` | `password123` | Full Nationwide Operations |
-| **Vendor Manager** | Akash | `vendor.akash@firstclub.co.in` | `password123` | Scoped to Envision Advertising (`v1`) |
+The application will be accessible at `http://localhost:3000`.
 
 ---
 
 ## 🔐 6. Role-Based Access Control (RBAC) Matrix
 
-FirstClub FFMS strictly enforces role-based authorization at both the API layer (Express middleware) and the UI layer (React Context).
-
-| Privilege / Capability | Super Admin (`super_admin`) | Operations Manager (`ops_manager`) | Vendor Manager (`vendor_manager`) | Driver (`driver`) |
-| :--- | :---: | :---: | :---: | :---: |
-| **Purpose of Role** | System oversight & tenant management | Nationwide fleet monitoring & campaign SLA execution | Vendor-specific vehicle management | Active shift duty & live location transmission |
-| **View Scope** | All nationwide vehicles, vendors, drivers, alerts | All nationwide vehicles, vendors, drivers, alerts | Vendor-assigned vehicles & drivers only | Assigned vehicle telemetry & shift profile only |
-| **Create Scope** | Vendors, Users, Vehicles, Campaigns | Vehicles, Campaigns, User Profiles | Assigned Driver Profiles | Telemetry pings, Photo proofs, Break events |
-| **Edit Scope** | All system records | All vehicle assignments & target corridors | Vendor-owned vehicle driver links | Driver contact profile & shift break toggles |
-| **Delete Scope** | All system records | Vehicles, Alerts, Campaigns | Restricted (No vehicle deletion) | Restricted |
-| **Accessible Modules**| All Modules | All Modules | Dashboard, Map, Vehicle Roster, Alerts, Reports | Driver App Shift Interface |
-| **Restricted Modules** | None | System Tenant Config | Admin Roster (Cross-vendor), Global System Config | Command Center, Admin CRUD, Global Heatmap |
-| **Dashboard Access** | Full Read/Write | Full Read/Write | Vendor-Scoped View Only | Restricted |
-| **Reports & PDF** | Full Download & Audit | Full Download & Audit | Vendor Fleet Reports Only | Restricted |
-| **GPS Tracking** | Full Multi-Vehicle Map | Full Multi-Vehicle Map | Vendor Fleet Map Only | Live Transmit Mode Only |
-| **Vehicle CRUD** | Full Control | Full Control | Read / Edit Assigned Driver | Restricted |
-| **Campaign Config** | Full Control | Full Control | View Assigned Campaigns | View Assigned Campaign Corridor |
+| Privilege / Capability | Operations Manager (`ops_manager`) | Vendor Manager (`vendor_manager`) | Driver (`driver`) |
+| :--- | :---: | :---: | :---: |
+| **Fleet View Scope** | All nationwide vehicles, vendors, drivers | Vendor-assigned vehicles & drivers only | Assigned vehicle telemetry & shift profile only |
+| **Driver Distance Log** | Full fleet roster & 7-day history for all drivers | Vendor driver distance roster | Assigned shift distance only |
+| **PDF Audit Reports** | Full download, auto-download, print | Vendor fleet PDF reports | Restricted |
+| **Vehicle CRUD** | Create, edit, assign, delete vehicles | Edit driver assignment for vendor vehicles | Restricted |
+| **Duty & Break Control** | Monitor duty status & active breaks | Monitor vendor duty status | Toggle shift duty, request Lunch/Tea breaks |
 
 ---
 
-## 🧩 7. Functional Overview & Module Architecture
+## 🌐 7. Production Deployment (Render Setup)
 
-### 1. Authentication Module
-- **Purpose**: Authenticates system users via HMAC-SHA256 signed JSON Web Tokens (JWT) stored in `HttpOnly` cookies.
-- **Features**: Salted SHA-256 password verification, active session tracking in `sessions` table, token revocation on logout.
-- **Roles**: All Roles (`ops_manager`, `vendor_manager`, `driver`).
-- **Input**: Email address & password string.
-- **Output**: Authenticated user object & signed HTTP cookie (`fleet_token`).
-- **Database Tables**: `users`, `sessions`.
-- **APIs**: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`.
+FirstClub FFMS is optimized for seamless deployment on **Render** using Node.js Web Services.
 
-### 2. Operations Command Center Dashboard
-- **Purpose**: High-level executive fleet overview for tracking total active vans, SLA delivery percentages, geofence breaches, and distance metrics.
-- **Features**: Interactive KPI stat cards, real-time alert feed, live fleet map integration, and rapid search filters.
-- **Roles**: `ops_manager`, `vendor_manager`.
-- **Input**: User role token, city & vendor filter selections.
-- **Output**: Rendered metrics, active vehicle counts, alert triggers.
-- **Database Tables**: `vehicles`, `alerts`, `campaigns`.
-- **APIs**: `GET /api/vehicles`, `GET /api/alerts`.
-
-### 3. Driver Shift App & Offline Queue Module
-- **Purpose**: Field interface for drivers to manage shift duties, toggle smartphone hardware GPS, request breaks, and upload campaign photo proofs with Gallery multi-photo selection and IndexedDB offline buffering.
-- **Features**: Modern toggle switches, 40-minute proof countdown timer, break buffer controls (Lunch, Tea, Service), IndexedDB offline ping store (`queued_pings`), auto-flushing network event listener (`window.addEventListener('online')`), gallery multi-photo upload (up to 4 images), and dynamic reverse-geocoded location display.
-- **Roles**: `driver`.
-- **Input**: Device GPS coordinates (`navigator.geolocation`), IndexedDB buffer, multi-image camera/gallery uploads, shift break toggles.
-- **Output**: Ingested telemetry pings, batch synced offline pings, photo proof records in SQLite, real-time SSE broadcasts.
-- **Database Tables**: `vehicles`, `telemetry_pings`, `approved_breaks`, `campaign_photo_proofs`.
-- **APIs**: `POST /api/vehicles/settings`, `POST /api/telemetry/ping`, `POST /api/telemetry/batch`, `POST /api/telemetry/breaks/toggle`, `POST /api/telemetry/photo-proof`.
-
-### 4. Admin Vehicle Roster CRUD
-- **Purpose**: Management table for creating, updating, and assigning LED vans to vendors and drivers.
-- **Features**: 6-column tabular layout (Driver Name, Primary Mobile, Plate Number, Vendor, City, Actions) with auto-population of driver contact details.
-- **Roles**: `ops_manager` (Full CRUD), `vendor_manager` (Scoped Read/Edit).
-- **Input**: Vehicle ID, plate number, vendor ID, driver ID, display dimensions, current city.
-- **Output**: Created or updated vehicle rows in SQLite database.
-- **Database Tables**: `vehicles`, `users`, `vendors`.
-- **APIs**: `GET /api/vehicles`, `POST /api/vehicles`, `PUT /api/vehicles/:id`, `DELETE /api/vehicles/:id`.
-
-### 5. Live Fleet Map & Heatmap Module
-- **Purpose**: Visual spatial tracking of all vehicles with live status markers, auto-centering, zoom invalidation, and dynamic density heatmap overlays.
-- **Features**: Dynamic Leaflet map canvas, custom status icons (Moving 🟢, Idle 🟡, Break 🔵, Offline ⚪), dynamic circle density heatmap toggle.
-- **Roles**: `ops_manager`, `vendor_manager`.
-- **Input**: Vehicle lat/lng coordinates, selected vehicle ID.
-- **Output**: Rendered map tiles, animated markers, circle density layers.
-- **Database Tables**: `vehicles`, `telemetry_pings`.
-- **APIs**: `GET /api/vehicles`, `GET /api/events` (SSE Stream).
-
-### 6. Historical Route Replay Module
-- **Purpose**: Breadcrumb playback of a vehicle's historic path during a specific date to verify campaign corridor coverage.
-- **Features**: Time-series slider, animated marker movement along polylines, speed graph.
-- **Roles**: `ops_manager`, `vendor_manager`.
-- **Input**: `vehicle_id`, selected `date`.
-- **Output**: Array of ordered breadcrumb pings (`lat`, `lng`, `speed`, `timestamp`).
-- **Database Tables**: `telemetry_pings`.
-- **APIs**: `GET /api/replay?vehicle_id=...&date=...`.
-
-### 7. Campaign & Geofence Management
-- **Purpose**: Defines advertising campaigns, targeted daily distance goals, and 2D polygon geofence corridors.
-- **Features**: 2D Ray-Casting point-in-polygon boundary checks, campaign-vehicle binding.
-- **Roles**: `ops_manager`.
-- **Input**: Campaign name, client, target city, daily km target, geofence polygon JSON coordinates.
-- **Output**: Configured campaign records and spatial boundary definitions.
-- **Database Tables**: `campaigns`, `vehicle_campaigns`.
-- **APIs**: `GET /api/campaigns`, `POST /api/campaigns`.
-
-### 8. Executive PDF Report Generation
-- **Purpose**: Generates official, multi-page daily audit reports for client billing proof.
-- **Features**: Dynamic multi-vehicle selection, summary statistics, hour-by-hour operational breakdown, route map graphic exhibit, and photo proof timestamps.
-- **Roles**: `ops_manager`, `vendor_manager`.
-- **Input**: `vehicle_id`, target `date`.
-- **Output**: Downloadable formatted PDF document.
-- **Database Tables**: `vehicles`, `telemetry_pings`, `campaign_photo_proofs`, `alerts`.
-- **APIs**: `GET /api/reports/daily?vehicle_id=...&date=...`.
+### Deployment Steps on Render
+1. Create a **New Web Service** on Render connected to your Git repository.
+2. Select **Node** environment.
+3. Configure the following build & start commands:
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `npm run server`
+4. Add a **Persistent Disk** (Mount Path: `/var/data`) on Render to persist SQLite database files (`fleet.db`) and uploaded photo proof images across restarts.
+5. Set Environment Variables:
+   - `NODE_ENV=production`
+   - `JWT_SECRET=<your-secure-random-secret>`
+   - `DATA_DIR=/var/data`
+   - `UPLOADS_DIR=/var/data/uploads`
 
 ---
 
-## 💾 10. Production SQLite Database Operations & Access Guide
+## 💡 8. Known Architectural Expectations & Limitations
 
-### Database Path & Storage
-- **Production Path**: `/app/data/fleet.db`
-- **WAL Log Files**: `/app/data/fleet.db-wal` & `/app/data/fleet.db-shm`
-- **Render Disk Mount**: `/app/data` and `/app/uploads`
-
-### Accessing Database in Production
-1. Go to [Render Dashboard](https://dashboard.render.com/) -> Select **FirstClub-Fleet-Monitoring-System** -> **Shell**.
-2. Run SQLite CLI:
-   ```bash
-   sqlite3 /app/data/fleet.db
-   ```
-
-### Backup & Restore
-- **Live Atomic Backup**:
-  ```bash
-  sqlite3 /app/data/fleet.db ".backup '/app/data/fleet_backup.db'"
-  ```
-- **Database Restoration**:
-  ```bash
-  cp /app/data/fleet_backup.db /app/data/fleet.db
-  rm -f /app/data/fleet.db-wal /app/data/fleet.db-shm
-  ```
+- **Web App (PWA) Background Telemetry**:
+  - Telemetry capture in the Web App operates on **Best-Effort 10-Minute Intervals + Immediate Tab Resume Catch-Up Pings + Screen WakeLock**.
+  - If a mobile OS forcibly suspends JS execution while screen is locked for extended periods, the Tab Resume Catch-Up Ping automatically captures and timestamps the location the exact moment the driver unlocks or returns to the app tab.
+  - Native OS-level background service execution when the screen is locked indefinitely will be supported in the upcoming Capacitor native mobile app.
 
 ---
 

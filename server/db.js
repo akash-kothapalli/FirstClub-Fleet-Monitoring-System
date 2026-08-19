@@ -213,6 +213,10 @@ export async function initDatabase() {
     await db.exec(`ALTER TABLE telemetry_pings ADD COLUMN accuracy REAL DEFAULT 8.0;`);
   } catch (e) {}
 
+  try {
+    await db.exec(`ALTER TABLE telemetry_pings ADD COLUMN driver_id TEXT;`);
+  } catch (e) {}
+
   await db.exec(`
     CREATE TABLE IF NOT EXISTS campaign_photo_proofs (
       id TEXT PRIMARY KEY,
