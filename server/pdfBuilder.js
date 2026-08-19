@@ -131,51 +131,7 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     }
   });
 
-  // Calculate exact route distance from consecutive pings for this driver/vehicle on target date
-  let exactRouteDistKm = 0;
-  for (let i = 1; i < pings.length; i++) {
-    const p1 = pings[i - 1];
-    const p2 = pings[i];
-    const R = 6371;
-    const dLat = (p2.lat - p1.lat) * Math.PI / 180;
-    const dLng = (p2.lng - p1.lng) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    if (dist >= 0.015 && dist <= 2.0) {
-      exactRouteDistKm += dist;
-    }
-  }
-
-  const totalDist = pings.length > 1 ? Math.round(exactRouteDistKm * 10) / 10 : (vehicle.today_distance_km || 0);
-  const shiftStartTimeStr = pings.length > 0 ? formatISTTime(pings[0].timestamp) : 'Not Started';
-  const shiftEndTimeStr = pings.length > 0 ? (vehicle.is_duty_active ? 'Ongoing Shift' : formatISTTime(pings[pings.length - 1].timestamp)) : 'Not Started';
-
-  // Calculate fleet combined total distance across all drivers on target date
-  const allPings = await db.prepare(`
-    SELECT vehicle_id, lat, lng, timestamp FROM telemetry_pings
-    WHERE date(timestamp) = date(?) ORDER BY vehicle_id, timestamp ASC
-  `).all(targetDate);
-
-  let fleetSumKm = 0;
-  for (let i = 1; i < allPings.length; i++) {
-    if (allPings[i - 1].vehicle_id === allPings[i].vehicle_id) {
-      const p1 = allPings[i - 1];
-      const p2 = allPings[i];
-      const R = 6371;
-      const dLat = (p2.lat - p1.lat) * Math.PI / 180;
-      const dLng = (p2.lng - p1.lng) * Math.PI / 180;
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) *
-        Math.sin(dLng / 2) * Math.sin(dLng / 2);
-      const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      if (dist >= 0.015 && dist <= 2.0) fleetSumKm += dist;
-    }
-  }
-  const fleetTotalDistKm = Math.round(fleetSumKm * 10) / 10;
-  const fleetTargetDistKm = 270; // Fleet target across all drivers combined
-
+  const totalDist = vehicle.today_distance_km || 0;
   const targetDist = campaign.target_km_per_day || 90;
   const slaScore = targetDist > 0 ? Math.min(100, Math.round((totalDist / targetDist) * 100)) : 100;
   const logoBase64 = getLogoBase64();
@@ -290,23 +246,17 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     <div class="meta-item"><span class="meta-label">Campaign</span><span class="meta-val">${campaign.name}</span></div>
     <div class="meta-item"><span class="meta-label">Client</span><span class="meta-val">${campaign.client}</span></div>
     <div class="meta-item"><span class="meta-label">Vehicle Plate</span><span class="meta-val">${vehicle.plate_number}</span></div>
-    <div class="meta-item"><span class="meta-label">Assigned Driver</span><span class="meta-val">${vehicle.driver_name || 'Unassigned Driver'}</span></div>
-    <div class="meta-item"><span class="meta-label">Driver Shift Duty Window</span><span class="meta-val" style="color: #38bdf8;">${shiftStartTimeStr} - ${shiftEndTimeStr}</span></div>
     <div class="meta-item"><span class="meta-label">Vendor Partner</span><span class="meta-val">${vendorDisplayName}</span></div>
+    <div class="meta-item"><span class="meta-label">Assigned Driver</span><span class="meta-val">${vehicle.driver_name || 'Unassigned Driver'}</span></div>
+    <div class="meta-item"><span class="meta-label">Display Specs</span><span class="meta-val">${vehicle.display_size}</span></div>
     <div class="meta-item"><span class="meta-label">Target City</span><span class="meta-val">${targetCityDisplay}</span></div>
-    <div class="meta-item"><span class="meta-label">Driver Target / Day</span><span class="meta-val">${targetDist} km</span></div>
+    <div class="meta-item"><span class="meta-label">Target Km/Day</span><span class="meta-val">${targetDist} km</span></div>
   </div>
 
   <div class="kpi-row">
     <div class="kpi-box">
-      <div class="meta-label">Driver Distance Covered</div>
+      <div class="meta-label">Distance Covered</div>
       <div class="kpi-num">${totalDist.toFixed(1)} km</div>
-      <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">Actual GPS Route Travelled</div>
-    </div>
-    <div class="kpi-box">
-      <div class="meta-label">Fleet Combined Distance Today</div>
-      <div class="kpi-num" style="color: #38bdf8;">${fleetTotalDistKm.toFixed(1)} km</div>
-      <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">Fleet Target: ${fleetTargetDistKm} km (All Drivers)</div>
     </div>
     <div class="kpi-box">
       <div class="meta-label">SLA Compliance Score</div>
@@ -315,6 +265,10 @@ export async function generateDailyAuditReport(vehicleId, dateStr) {
     <div class="kpi-box">
       <div class="meta-label">Total Running Time</div>
       <div class="kpi-num">${Math.floor((vehicle.running_time_mins || 0) / 60)}h ${(vehicle.running_time_mins || 0) % 60}m</div>
+    </div>
+    <div class="kpi-box">
+      <div class="meta-label">Total Break Time</div>
+      <div class="kpi-num" style="color: #38bdf8;">${Math.floor(totalBreakMins / 60)}h ${totalBreakMins % 60}m</div>
     </div>
   </div>
 

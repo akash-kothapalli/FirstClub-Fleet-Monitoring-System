@@ -8,7 +8,6 @@ import { DriverApp } from './components/DriverApp';
 import { AuthModal } from './components/AuthModal';
 import { AdminPanel } from './components/AdminPanel';
 import { ReportModal } from './components/ReportModal';
-import { DriverDistanceModal } from './components/DriverDistanceModal';
 
 function MainApp() {
   const { user, isDriver } = useAuth();
@@ -18,7 +17,6 @@ function MainApp() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
-  const [isDistanceOpen, setIsDistanceOpen] = useState(false);
 
   // Unauthenticated user -> Show dedicated AuthPage Portal
   if (!user) {
@@ -33,7 +31,6 @@ function MainApp() {
         openAuth={() => setIsAuthOpen(true)}
         openAdmin={() => setIsAdminOpen(true)}
         openReport={() => setIsReportOpen(true)}
-        openDistanceModal={() => setIsDistanceOpen(true)}
       />
 
       <main>
@@ -50,7 +47,6 @@ function MainApp() {
       <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
       <AdminPanel isOpen={isAdminOpen} onClose={() => setIsAdminOpen(false)} />
       <ReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} />
-      <DriverDistanceModal isOpen={isDistanceOpen} onClose={() => setIsDistanceOpen(false)} />
     </div>
   );
 }
