@@ -5,7 +5,7 @@ import { AlertsCenter } from './AlertsCenter';
 import { RouteReplay } from './RouteReplay';
 import { useFleet } from '../context/FleetContext';
 
-export function Dashboard() {
+export function Dashboard({ openDistanceModal }) {
   const { vehicles, selectedVehicleId, setSelectedVehicleId } = useFleet();
   const [mapMode, setMapMode] = useState('live');
   const [cityFilter, setCityFilter] = useState('ALL');
@@ -21,7 +21,7 @@ export function Dashboard() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      <StatsOverview />
+      <StatsOverview onOpenDistanceModal={openDistanceModal} />
 
       <div className="workspace-grid">
         <aside className="panel">

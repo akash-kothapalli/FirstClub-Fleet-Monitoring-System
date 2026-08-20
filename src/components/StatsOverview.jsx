@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useFleet } from '../context/FleetContext';
 import { apiFetch } from '../services/api';
 
-export function StatsOverview() {
+export function StatsOverview({ onOpenDistanceModal }) {
   const { vehicles, alerts } = useFleet();
   const [fleetDistData, setFleetDistData] = useState(null);
 
@@ -41,10 +41,19 @@ export function StatsOverview() {
         <span className="stat-sub">Tracked Corridors</span>
       </div>
 
-      <div className="stat-card">
-        <span className="stat-label">Total Distance Today</span>
+      <div
+        className="stat-card"
+        onClick={onOpenDistanceModal}
+        style={{ cursor: onOpenDistanceModal ? 'pointer' : 'default', border: '1px solid rgba(56, 189, 248, 0.4)' }}
+        title="Click to view Driver Distance Details & 7-Day History"
+      >
+        <span className="stat-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          Total Distance Today <span>🔍</span>
+        </span>
         <span className="stat-value" style={{ color: 'var(--accent-cyan)' }}>{totalKm.toFixed(1)} km</span>
-        <span className="stat-sub">Fleet Target: {targetKmTotal} km</span>
+        <span className="stat-sub" style={{ color: '#38bdf8', fontWeight: 600 }}>
+          Fleet Target: {targetKmTotal} km • Click for Driver Details ↗
+        </span>
       </div>
 
       <div className="stat-card">

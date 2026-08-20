@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 
-export function Header({ currentView, setView, openAdmin, openReport }) {
+export function Header({ currentView, setView, openAdmin, openReport, openDistanceModal }) {
   const { user, isOpsManager, isDriver, logout } = useAuth();
 
   const displayName = user ? (user.fullName || user.full_name || user.email) : 'GUEST';
@@ -39,6 +39,12 @@ export function Header({ currentView, setView, openAdmin, openReport }) {
         {!isDriver && isOpsManager && (
           <button className="nav-btn" onClick={openAdmin}>
             ⚙️ Admin CRUD
+          </button>
+        )}
+
+        {!isDriver && (
+          <button className="nav-btn" onClick={openDistanceModal}>
+            👨‍✈️ Driver Distance Log
           </button>
         )}
 
